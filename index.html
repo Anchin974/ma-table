@@ -12,7 +12,7 @@
 <body>
   <div id="root"></div>
   <script type="text/babel">
-import { useState, useEffect, useRef } from "react"; 
+var { useState, useEffect, useRef } = React;
 
 /* ─── THEMES ──────────────────────────────────────────────────── */
 var THEMES = {
@@ -3519,7 +3519,7 @@ function ImportModal(props) {
   );
 }
 
-export default App;
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
 
   </script>
 </body>
