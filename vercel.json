@@ -1,0 +1,9 @@
+{
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "headers": [
+    {
+      "source": "/index.jsx",
+      "headers": [{ "key": "Content-Type", "value": "text/babel" }]
+    }
+  ]
+}
