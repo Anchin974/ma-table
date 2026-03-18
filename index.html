@@ -579,6 +579,18 @@ function alertColor(level, t) {
   return t.acc;
 }
 
+function getWeekKey(date) {
+  var d = new Date(date);
+  var jan1 = new Date(d.getFullYear(), 0, 1);
+  var weekNum = Math.ceil(((d - jan1) / 86400000 + jan1.getDay() + 1) / 7);
+  return d.getFullYear() + "-W" + (weekNum < 10 ? "0" : "") + weekNum;
+}
+function getBudgetForPeriod(schedule, type, dateKey, defaultVal) {
+  if (!schedule || !schedule.length) return defaultVal;
+  var found = schedule.filter(function(s){ return s.type===type && s.dateKey===dateKey; });
+  if (found.length === 0) return defaultVal;
+  return found[found.length-1].amount;
+}
 function fmtYM(ym) {
   var months = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
   var parts = ym.split("-");
@@ -773,7 +785,7 @@ function App() {
   var _planner = useState({"2026-03-05":{"Dîner":"r_tajine"},"2026-03-06":{"Dîner":"r_cabillaud"},"2026-03-07":{"Déjeuner":"r_risotto","Dîner":"r_boeuf"},"2026-03-08":{"Petit-déj":"r_crepes","Déjeuner":"r_flammekueche","Dîner":"r_pouletcurry"}}); var planner = _planner[0]; var setPlanner = _planner[1];
   var _recipes = useState(DEFAULT_RECIPES); var recipes = _recipes[0]; var setRecipes = _recipes[1];
   var _catalogue = useState(CATALOGUE_DEFAULT); var catalogue = _catalogue[0]; var setCatalogue = _catalogue[1];
-  var _lists = useState([{id:"l1",name:"Courses semaine",items:[],checked:{}}]); var lists = _lists[0]; var setLists = _lists[1];
+  var _lists = useState([{id:"l1",name:"Courses libres",items:[],checked:{},type:"free"}]); var lists = _lists[0]; var setLists = _lists[1];
   var _activeList = useState("l1"); var activeList = _activeList[0]; var setActiveList = _activeList[1];
   var _profiles = useState([{id:"p1",name:"Moi",allergens:[]},{id:"p2",name:"Pers. 2",allergens:[]},{id:"p3",name:"Pers. 3",allergens:[]},{id:"p4",name:"Pers. 4",allergens:[]}]); var profiles = _profiles[0]; var setProfiles = _profiles[1];
   var _loaded = useState(false); var loaded = _loaded[0]; var setLoaded = _loaded[1];
@@ -818,12 +830,15 @@ function App() {
   var _weekBudget = useState(150); var weekBudget = _weekBudget[0]; var setWeekBudget = _weekBudget[1];
   var _monthBudget = useState(600); var monthBudget = _monthBudget[0]; var setMonthBudget = _monthBudget[1];
   var _expenses = useState([]); var expenses = _expenses[0]; var setExpenses = _expenses[1];
+  var _budgetSchedule = useState([]); var budgetSchedule = _budgetSchedule[0]; var setBudgetSchedule = _budgetSchedule[1];
   var _budgetEditOpen = useState(false); var budgetEditOpen = _budgetEditOpen[0]; var setBudgetEditOpen = _budgetEditOpen[1];
+  var _budgetActiveWeek = useState(null); var budgetActiveWeek = _budgetActiveWeek[0]; var setBudgetActiveWeek = _budgetActiveWeek[1];
   var _expenseForm = useState(null); var expenseForm = _expenseForm[0]; var setExpenseForm = _expenseForm[1];
   var _budgetMonth = useState((function(){ var n=new Date(); return n.getFullYear()+"-"+(n.getMonth()<9?"0":"")+(n.getMonth()+1); })()); var budgetMonth = _budgetMonth[0]; var setBudgetMonth = _budgetMonth[1];
   var _catNewOpen = useState(false); var catNewOpen = _catNewOpen[0]; var setCatNewOpen = _catNewOpen[1];
   var _catNew = useState({name:"",aisle:AISLES[0],unit:"pièce"}); var catNew = _catNew[0]; var setCatNew = _catNew[1];
   var _listNewOpen = useState(false); var listNewOpen = _listNewOpen[0]; var setListNewOpen = _listNewOpen[1];
+  var _listActionsOpen = useState(false); var listActionsOpen = _listActionsOpen[0]; var setListActionsOpen = _listActionsOpen[1];
   var _listNewName = useState(""); var listNewName = _listNewName[0]; var setListNewName = _listNewName[1];
   var _listRenameOpen = useState(false); var listRenameOpen = _listRenameOpen[0]; var setListRenameOpen = _listRenameOpen[1];
   var _listRename = useState(""); var listRename = _listRename[0]; var setListRename = _listRename[1];
@@ -899,7 +914,7 @@ function App() {
     if (!loaded) return;
     var timer = setTimeout(function() {
       setSyncStatus("saving");
-      saveData({planner:planner,recipes:recipes,catalogue:catalogue,lists:lists,activeList:activeList,profiles:profiles,themeId:themeId,recipeMedia:recipeMedia,favorites:favorites,listTemplates:listTemplates,catFavorites:catFavorites,expenses:expenses,weekBudget:weekBudget,monthBudget:monthBudget}, mode, groupKey).then(function(){
+      saveData({planner:planner,recipes:recipes,catalogue:catalogue,lists:lists,activeList:activeList,profiles:profiles,themeId:themeId,recipeMedia:recipeMedia,favorites:favorites,listTemplates:listTemplates,catFavorites:catFavorites,expenses:expenses,weekBudget:weekBudget,monthBudget:monthBudget,budgetSchedule:budgetSchedule}, mode, groupKey).then(function(){
         setSyncStatus("ok");
         setSavedOk(true);
         setTimeout(function(){ setSavedOk(false); setSyncStatus("idle"); }, 1600);
@@ -932,6 +947,10 @@ function App() {
     if (d.favorites) setFavorites(d.favorites);
     if (d.listTemplates) setListTemplates(d.listTemplates);
     if (d.catFavorites) setCatFavorites(d.catFavorites);
+    if (d.budgetSchedule) setBudgetSchedule(d.budgetSchedule);
+    if (d.expenses) setExpenses(d.expenses);
+    if (d.weekBudget) setWeekBudget(d.weekBudget);
+    if (d.monthBudget) setMonthBudget(d.monthBudget);
   }
 
   function switchMode(newMode, newKey, newMeta) {
@@ -1121,19 +1140,26 @@ function App() {
     });
     var newItems = Object.values(items);
     if (newItems.length === 0) { toast("Aucun ingrédient trouvé dans ce planning."); return; }
-    var active = lists.find(function(l){ return l.id===activeList; }) || lists[0];
-    if (active.items.length === 0) {
-      updList(active.id, function(l){ return Object.assign({},l,{items:newItems,checked:{}}); });
-      toast(newItems.length + " articles ajoutés !");
-    } else {
-      var mergedItems = active.items.slice();
+    var wk = getWeekKey(weekDates[0]);
+    var wNum = wk.split("-W")[1];
+    var wYear = wk.split("-W")[0];
+    var listName = "Courses S" + wNum + " " + wYear;
+    var existing = lists.find(function(l){ return l.type==="week" && l.weekKey===wk; });
+    if (existing) {
+      var mergedItems = existing.items.slice();
       newItems.forEach(function(ni){
         var match = mergedItems.find(function(li){ return li.name.toLowerCase()===ni.name.toLowerCase(); });
         if (match) { match.qty = +(match.qty + ni.qty).toFixed(2); }
         else { mergedItems.push(ni); }
       });
-      updList(active.id, function(l){ return Object.assign({},l,{items:mergedItems,checked:l.checked||{}}); });
-      toast("Liste mise à jour !");
+      updList(existing.id, function(l){ return Object.assign({},l,{items:mergedItems,checked:l.checked||{}}); });
+      setActiveList(existing.id);
+      toast(listName + " mise a jour !");
+    } else {
+      var newList = {id:gid(),name:listName,items:newItems,checked:{},type:"week",weekKey:wk};
+      setLists(function(p){ return p.concat([newList]); });
+      setActiveList(newList.id);
+      toast(listName + " creee (" + newItems.length + " articles) !");
     }
     setTab("shopping");
   }
@@ -1228,9 +1254,10 @@ function App() {
     });
   });
   budgetWeekEst = Math.round(budgetWeekEst*100)/100;
-  var budgetWLevel = alertLevel(budgetWeekEst, weekBudget);
+  var curWeekBudget = getBudgetForPeriod(budgetSchedule, "week", getWeekKey(new Date()), weekBudget);
+  var budgetWLevel = alertLevel(budgetWeekEst, curWeekBudget);
   var budgetWColor = alertColor(budgetWLevel, t);
-  var budgetWPct = weekBudget > 0 ? Math.min(budgetWeekEst / weekBudget, 1) : 0;
+  var budgetWPct = curWeekBudget > 0 ? Math.min(budgetWeekEst / curWeekBudget, 1) : 0;
   var budgetMExpenses = expenses.filter(function(e){ return e.date && e.date.slice(0,7)===budgetMonth; });
   var budgetMTotal = Math.round(budgetMExpenses.reduce(function(s,e){ return s+(e.amount||0); },0)*100)/100;
   var budgetMLevel = alertLevel(budgetMTotal, monthBudget);
@@ -1251,6 +1278,49 @@ function App() {
   var budgetMNames = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
 
 
+  var _nowW = new Date();
+  var budgetWeekKeys = [];
+  for (var _wiX=7;_wiX>=0;_wiX--) {
+    var _wdX = new Date(_nowW); _wdX.setDate(_wdX.getDate() - _wiX*7);
+    budgetWeekKeys.push(getWeekKey(_wdX));
+  }
+  var budgetWeekActuals = budgetWeekKeys.map(function(wk){
+    var expTotal = expenses.filter(function(e){
+      var eWk = e.weekKey || (e.date ? getWeekKey(new Date(e.date)) : null);
+      return eWk===wk;
+    }).reduce(function(s,e){ return s+(e.amount||0); },0);
+    return Math.round(expTotal*100)/100;
+  });
+  function calcListCost(lst) {
+    if (!lst || !lst.items.length) return 0;
+    var cost = lst.items.reduce(function(s, item){
+      var cat = catalogue.find(function(p){ return p.name.toLowerCase()===item.name.toLowerCase(); });
+      if (cat && cat.price && unitsCompatible(item.unit, cat.unit)) {
+        return s + (cat.price * (item.qty||1));
+      }
+      if (item.price != null) return s + item.price;
+      return s;
+    }, 0);
+    return Math.round(cost*100)/100;
+  }
+  var budgetWeekListCosts = budgetWeekKeys.map(function(wk){
+    var allWkLists = lists.filter(function(l){ return l.weekKey===wk; });
+    if (!allWkLists.length) return 0;
+    return Math.round(allWkLists.reduce(function(s,l){ return s+calcListCost(l); },0)*100)/100;
+  });
+  var budgetCurWk = getWeekKey(_nowW);
+  var budgetWeekEsts = budgetWeekKeys.map(function(wk,idx){ return wk===budgetCurWk ? budgetWeekEst : budgetWeekListCosts[idx]; });
+  var budgetWeekBudgets = budgetWeekKeys.map(function(wk){ return getBudgetForPeriod(budgetSchedule,"week",wk,weekBudget); });
+  var budgetWeekMax = Math.max.apply(null, budgetWeekActuals.map(function(v,i){ return v+budgetWeekEsts[i]; }).concat([weekBudget,0.01]));
+  var budgetHasWeekData = budgetWeekActuals.some(function(v){ return v>0; }) || budgetWeekEst>0 || budgetWeekListCosts.some(function(v){ return v>0; });
+  var sheetWeekLists = lists.filter(function(l){ return l.type==="week"; }).sort(function(a,b){ return b.weekKey>a.weekKey ? 1 : -1; });
+  var sheetFreeLists = lists.filter(function(l){ return l.type!=="week"; });
+  var _genWk = getWeekKey(weekDates[0]);
+  var _genWNum = _genWk.split("-W")[1];
+  var _genWYear = _genWk.split("-W")[0];
+  var _genWLabel = "S" + _genWNum + " " + _genWYear;
+  var _genWExists = lists.find(function(l){ return l.type==="week" && l.weekKey===_genWk; });
+  var genBtnLabel = "🛒 " + (_genWExists ? "Mettre a jour Courses " : "Generer Courses ") + _genWLabel;
   return (
     <div style={{minHeight:"100vh",background:t.bg,fontFamily:"Nunito,sans-serif",color:t.text,paddingBottom:100,position:"relative"}}>
 
@@ -1309,7 +1379,7 @@ function App() {
             <button onClick={function(){setCalOffset(function(o){return o+1;});}} style={{background:t.bg,border:"none",borderRadius:10,width:36,height:36,cursor:"pointer",boxShadow:nSm(t),fontWeight:900,color:t.text2,fontSize:20}}>&#x203a;</button>
           </div>
           <div style={{marginBottom:14}}>
-            <Btn theme={t} accent onClick={genFromPlanner}>🛒 Générer liste "{curList.name}"</Btn>
+            <Btn theme={t} accent onClick={genFromPlanner}>{genBtnLabel}</Btn>
           </div>
           <div style={{background:t.bg,borderRadius:20,padding:"14px 10px",boxShadow:neu(t)}}>
             <div style={{display:"grid",gridTemplateColumns:"52px 1fr 1fr 1fr",gap:7,marginBottom:10}}>
@@ -1580,7 +1650,10 @@ function App() {
             <button onClick={function(){setListSheetOpen(true);}}
               style={{flex:1,background:t.bg,border:"none",borderRadius:14,padding:"11px 16px",cursor:"pointer",
                 boxShadow:nSm(t),display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-              <span style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:t.text}}>{curList.name}</span>
+              <span style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:t.text}}>{curList.name}</span>
+                {curList.type==="week" && <span style={{fontSize:10,fontWeight:800,color:t.acc,background:t.acc+"22",borderRadius:8,padding:"1px 7px"}}>{"sem."}</span>}
+              </span>
               <span style={{display:"flex",alignItems:"center",gap:6}}>
                 {totalPending>0 && <span style={{background:t.acc,color:"#fff",borderRadius:20,padding:"1px 8px",fontSize:11,fontWeight:800}}>{totalPending}</span>}
                 <span style={{fontSize:12,color:t.text3,fontWeight:700}}>{"▾"}</span>
@@ -1594,39 +1667,72 @@ function App() {
           </div>
 
           {/* Actions liste */}
-          <div style={{display:"flex",gap:7,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
-            <Btn theme={t} small onClick={function(){setListRenameOpen(true);setListRename(curList.name);}}>✏ Renommer</Btn>
-            <Btn theme={t} small onClick={function(){saveAsTemplate(curList);}}>★ Modele</Btn>
-            <Btn theme={t} small onClick={function(){setTemplatesOpen(true);}}>{"📋 Modeles"}{listTemplates.length>0&&<span style={{marginLeft:4,background:t.acc,color:"#fff",borderRadius:10,padding:"0 5px",fontSize:10}}>{listTemplates.length}</span>}</Btn>
-            <Btn theme={t} small onClick={function(){duplicateList(curList.id);}}>⧉ Dupliquer</Btn>
-            {lists.length>1 && <Btn theme={t} small style={{color:WARN}} onClick={function(){askConfirm("Supprimer \""+curList.name+"\" ?","Tous les articles seront perdus.",function(){var remaining=lists.filter(function(l){return l.id!==curList.id;}); setLists(remaining); setActiveList(remaining[0].id); toast("Liste supprimée");});}}>🗑 Suppr.</Btn>}
-            {checkedN>0 && <Btn theme={t} small onClick={function(){askConfirm("Vider les cochés ?","Les articles cochés seront supprimés.",function(){clearCk();})}}>✓ Vider cochés ({checkedN})</Btn>}
-            {total>0 && <Btn theme={t} small style={{color:WARN}} onClick={function(){askConfirm("Vider toute la liste ?","Tous les articles seront perdus.",function(){clearAll();})}}>🗑 Tout vider</Btn>}
-            {selMode!=="shopping" ? (
-              <Btn theme={t} small onClick={function(){setSelMode("shopping");setSelIds({});}}>☑ Sélect.</Btn>
-            ) : (
-              <span style={{display:"flex",gap:6}}>
-                <Btn theme={t} small onClick={function(){var ids={}; curList.items.forEach(function(i){ids[i.id]=true;}); setSelIds(ids);}}>Tout ({curList.items.length})</Btn>
-                <Btn theme={t} small onClick={clearSel}>Annuler</Btn>
-                {Object.keys(selIds).length>0 && <Btn theme={t} small style={{color:WARN}} onClick={function(){askConfirm("Supprimer "+Object.keys(selIds).length+" article(s) ?","Ces articles seront supprimés de la liste.",function(){updList(curList.id,function(l){return Object.assign({},l,{items:l.items.filter(function(i){return !selIds[i.id];}),checked:Object.assign({})});});toast(Object.keys(selIds).length+" article(s) supprimé(s)");clearSel();});}}>🗑 ({Object.keys(selIds).length})</Btn>}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+            {checkedN>0 && (
+              <button onClick={function(){askConfirm("Vider les coches ?","Les articles coches seront supprimes.",function(){clearCk();});}} style={{flex:1,background:t.s1,border:"none",borderRadius:10,padding:"8px 10px",cursor:"pointer",fontSize:12,fontWeight:700,color:t.text,fontFamily:"Nunito,sans-serif"}}>
+                {"Vider coches (" + checkedN + ")"}
+              </button>
+            )}
+            {selMode!=="shopping" && !checkedN && (
+              <button onClick={function(){setSelMode("shopping");setSelIds({});}} style={{flex:1,background:t.s1,border:"none",borderRadius:10,padding:"8px 10px",cursor:"pointer",fontSize:12,fontWeight:700,color:t.text,fontFamily:"Nunito,sans-serif"}}>{"Selection"}</button>
+            )}
+            {selMode==="shopping" && (
+              <span style={{display:"flex",gap:6,flex:1}}>
+                <button onClick={function(){var ids={}; curList.items.forEach(function(i){ids[i.id]=true;}); setSelIds(ids);}} style={{flex:1,background:t.s1,border:"none",borderRadius:10,padding:"8px",cursor:"pointer",fontSize:11,fontWeight:700,color:t.text,fontFamily:"Nunito,sans-serif"}}>{"Tout"}</button>
+                <button onClick={function(){setSelMode(null);setSelIds({});}} style={{flex:1,background:t.s1,border:"none",borderRadius:10,padding:"8px",cursor:"pointer",fontSize:11,fontWeight:700,color:t.text3,fontFamily:"Nunito,sans-serif"}}>{"Annuler"}</button>
+                {Object.keys(selIds).length>0 && <button onClick={function(){askConfirm("Supprimer la selection ?","",function(){updList(curList.id,function(l){return Object.assign({},l,{items:l.items.filter(function(i){return !selIds[i.id];}),checked:Object.assign({},l.checked)});});setSelMode(null);setSelIds({});});}} style={{flex:1,background:WARN+"22",border:"none",borderRadius:10,padding:"8px",cursor:"pointer",fontSize:11,fontWeight:700,color:WARN,fontFamily:"Nunito,sans-serif"}}>{"Suppr."}</button>}
               </span>
             )}
+            <button onClick={function(){setListActionsOpen(true);}} style={{background:t.s1,border:"none",borderRadius:10,width:36,height:36,cursor:"pointer",fontSize:18,color:t.text2,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{"..."}</button>
           </div>
-
+          {listActionsOpen && (
+            <div onClick={function(){setListActionsOpen(false);}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+              <div onClick={function(e){e.stopPropagation();}} style={{background:t.bg,borderRadius:"22px 22px 0 0",padding:"16px 16px 40px",width:"100%",maxWidth:560}}>
+                <div style={{width:36,height:4,borderRadius:2,background:t.s1,margin:"0 auto 16px"}}/>
+                <button onClick={function(){setListRenameOpen(true);setListRename(curList.name);setListActionsOpen(false);}} style={{display:"flex",alignItems:"center",gap:12,width:"100%",background:"none",border:"none",padding:"12px 4px",cursor:"pointer",fontSize:14,fontWeight:700,color:t.text,fontFamily:"Nunito,sans-serif",borderBottom:"1px solid "+t.s1}}>
+                  <span>{"✏"}</span><span>{"Renommer la liste"}</span>
+                </button>
+                <button onClick={function(){saveAsTemplate(curList);setListActionsOpen(false);}} style={{display:"flex",alignItems:"center",gap:12,width:"100%",background:"none",border:"none",padding:"12px 4px",cursor:"pointer",fontSize:14,fontWeight:700,color:t.text,fontFamily:"Nunito,sans-serif",borderBottom:"1px solid "+t.s1}}>
+                  <span>{"★"}</span><span>{"Sauver comme modele"}</span>
+                </button>
+                <button onClick={function(){setTemplatesOpen(true);setListActionsOpen(false);}} style={{display:"flex",alignItems:"center",gap:12,width:"100%",background:"none",border:"none",padding:"12px 4px",cursor:"pointer",fontSize:14,fontWeight:700,color:t.text,fontFamily:"Nunito,sans-serif",borderBottom:"1px solid "+t.s1}}>
+                  <span>{"📋"}</span><span>{"Modeles" + (listTemplates.length>0 ? " (" + listTemplates.length + ")" : "")}</span>
+                </button>
+                <button onClick={function(){duplicateList(curList.id);setListActionsOpen(false);}} style={{display:"flex",alignItems:"center",gap:12,width:"100%",background:"none",border:"none",padding:"12px 4px",cursor:"pointer",fontSize:14,fontWeight:700,color:t.text,fontFamily:"Nunito,sans-serif",borderBottom:"1px solid "+t.s1}}>
+                  <span>{"⧉"}</span><span>{"Dupliquer la liste"}</span>
+                </button>
+                {total>0 && <button onClick={function(){askConfirm("Vider toute la liste ?","Tous les articles seront perdus.",function(){clearAll();});setListActionsOpen(false);}} style={{display:"flex",alignItems:"center",gap:12,width:"100%",background:"none",border:"none",padding:"12px 4px",cursor:"pointer",fontSize:14,fontWeight:700,color:WARN,fontFamily:"Nunito,sans-serif",borderBottom:"1px solid "+t.s1}}>
+                  <span>{"🗑"}</span><span>{"Tout vider"}</span>
+                </button>}
+                {lists.length>1 && <button onClick={function(){askConfirm("Supprimer \""+curList.name+"\" ?","Tous les articles seront perdus.",function(){var r=lists.filter(function(l){return l.id!==curList.id;});setLists(r);setActiveList(r[0].id);toast("Liste supprimee");});setListActionsOpen(false);}} style={{display:"flex",alignItems:"center",gap:12,width:"100%",background:"none",border:"none",padding:"12px 4px",cursor:"pointer",fontSize:14,fontWeight:700,color:WARN,fontFamily:"Nunito,sans-serif"}}>
+                  <span>{"🗑"}</span><span>{"Supprimer la liste"}</span>
+                </button>}
+              </div>
+            </div>
+          )}
           {/* Recherche produit */}
           <div style={{position:"relative",marginBottom:14}}>
             <input style={inpStyle(t)} placeholder="+ Ajouter un article..." value={listSearch} onChange={function(e){setListSearch(e.target.value);}} autoComplete="off"/>
+            {listSearch.trim().length>0 && listResults.length===0 && (
+              <div style={{position:"absolute",top:"100%",left:0,right:0,background:t.bg,borderRadius:12,boxShadow:neu(t),zIndex:30,padding:"10px 12px",marginTop:4}}>
+                <div style={{fontSize:12,color:t.text3,marginBottom:8}}>{"Aucun produit trouve dans le catalogue"}</div>
+                <button onClick={function(){var nm=listSearch.trim();var newProd={id:gid(),name:nm,aisle:"Autres",unit:"piece",price:null};setCatalogue(function(p){return p.concat([newProd]);});addToList(newProd,1);setListSearch("");toast(nm+" cree et ajoute !");}} style={{background:t.acc,border:"none",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontSize:13,fontWeight:800,color:"#fff",width:"100%",fontFamily:"Nunito,sans-serif"}}>{"+ Creer dans le catalogue"}</button>
+              </div>
+            )}
             {listResults.length>0 && (
               <div style={{position:"absolute",top:"100%",left:0,right:0,background:t.bg,borderRadius:12,boxShadow:neu(t),zIndex:30,overflow:"hidden",marginTop:4}}>
                 {listResults.map(function(c){
                   return (
-                    <div key={c.id} style={{display:"flex",alignItems:"center",padding:"9px 12px",borderBottom:"1px solid "+t.s1,cursor:"pointer"}} onClick={function(){addToList(c,listQty[c.id]||1);setListSearch("");}}>
-                      <span style={{flex:1,fontSize:13,fontWeight:600,color:t.text}}>{c.name}</span>
-                      <span style={{fontSize:13,color:t.text3}}>{c.unit}</span>
-                      <div style={{display:"flex",alignItems:"center",gap:4,marginLeft:8}}>
-                        <button onClick={function(e){e.stopPropagation();setListQty(function(p){return Object.assign({},p,{[c.id]:Math.max(1,(listQty[c.id]||1)-1)});});}} style={{background:t.bg,border:"none",borderRadius:6,width:22,height:22,cursor:"pointer",boxShadow:nSm(t),fontWeight:900,color:t.text2}}>-</button>
-                        <span style={{width:20,textAlign:"center",fontWeight:700,fontSize:12,color:t.text}}>{listQty[c.id]||1}</span>
-                        <button onClick={function(e){e.stopPropagation();setListQty(function(p){return Object.assign({},p,{[c.id]:(listQty[c.id]||1)+1});});}} style={{background:t.bg,border:"none",borderRadius:6,width:22,height:22,cursor:"pointer",boxShadow:nSm(t),fontWeight:900,color:t.text2}}>+</button>
+                    <div key={c.id} style={{display:"flex",alignItems:"center",padding:"8px 12px",borderBottom:"1px solid "+t.s1,gap:6}}>
+                      <div style={{flex:1,minWidth:0}} onClick={function(){addToList(c,listQty[c.id]||1);setListSearch("");}}>
+                        <span style={{fontSize:13,fontWeight:700,color:t.text}}>{c.name}</span>
+                        <span style={{fontSize:11,color:t.text3,marginLeft:5}}>{c.unit}</span>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
+                        <button onClick={function(e){e.stopPropagation();setListQty(function(p){return Object.assign({},p,{[c.id]:Math.max(1,(listQty[c.id]||1)-1)});});}} style={{background:t.s1,border:"none",borderRadius:6,width:24,height:24,cursor:"pointer",fontWeight:900,color:t.text2,fontSize:14}}>-</button>
+                        <input type="number" min="1" step="1" value={listQty[c.id]||1} onClick={function(e){e.stopPropagation();}} onChange={function(e){e.stopPropagation();var v=parseFloat(e.target.value);if(v>0)setListQty(function(p){return Object.assign({},p,{[c.id]:v});});}} style={{width:36,textAlign:"center",fontWeight:700,fontSize:12,color:t.text,background:t.s1,border:"1px solid "+t.acc+"55",borderRadius:6,padding:"2px 0",fontFamily:"Nunito,sans-serif"}}/>
+                        <button onClick={function(e){e.stopPropagation();setListQty(function(p){return Object.assign({},p,{[c.id]:(listQty[c.id]||1)+1});});}} style={{background:t.s1,border:"none",borderRadius:6,width:24,height:24,cursor:"pointer",fontWeight:900,color:t.text2,fontSize:14}}>+</button>
+                        <button onClick={function(e){e.stopPropagation();addToList(c,listQty[c.id]||1);setListSearch("");}} style={{background:t.acc,border:"none",borderRadius:8,padding:"4px 8px",cursor:"pointer",fontSize:11,fontWeight:800,color:"#fff"}}>{"+ Ajouter"}</button>
                       </div>
                     </div>
                   );
@@ -1715,14 +1821,14 @@ function App() {
             </div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
               <span style={{fontSize:28,fontWeight:900,color:budgetWColor}}>{fmtEuro(budgetWeekEst)}</span>
-              <span style={{fontSize:13,color:t.text3,fontWeight:700}}>{"/ "+fmtEuro(weekBudget)}</span>
+              <span style={{fontSize:13,color:t.text3,fontWeight:700}}>{"/ "+fmtEuro(curWeekBudget)}</span>
             </div>
             <div style={{background:t.s1,borderRadius:20,height:10,overflow:"hidden",marginBottom:8}}>
               <div style={{height:"100%",borderRadius:20,background:"linear-gradient(90deg,"+budgetWColor+","+budgetWColor+"aa)",width:(budgetWPct*100)+"%",transition:"width .5s"}}/>
             </div>
             <div style={{display:"flex",justifyContent:"space-between",fontSize:11,fontWeight:700,color:t.text3}}>
               <span>{budgetWLevel==="danger"?"⚠ Budget dépassé !":budgetWLevel==="warning"?"⚠ Attention, bientôt atteint":"Dans les limites"}</span>
-              <span>{weekBudget>0?Math.round(budgetWPct*100)+"%":""}</span>
+              <span>{curWeekBudget>0?Math.round(budgetWPct*100)+"%":""}</span>
             </div>
             {budgetWeekEst===0 && <div style={{fontSize:12,color:t.text3,marginTop:8,fontWeight:600,textAlign:"center"}}>{"Aucun repas planifié cette semaine"}</div>}
           </div>
@@ -1775,33 +1881,164 @@ function App() {
             </div>
           )}
 
-          {/* Graphique 6 mois */}
-          {budgetHasChart && (
+          {/* Graphique budget */}
+          {(budgetHasWeekData || budgetHasChart) && (
             <div style={{background:t.bg,borderRadius:20,padding:"16px",boxShadow:neu(t),marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:14,color:t.text,marginBottom:12}}>{"Tendance des 6 derniers mois"}</div>
-              <div style={{display:"flex",alignItems:"flex-end",gap:6,height:90}}>
-                {budgetChartMonths.map(function(m, idx){
-                  var val = budgetChartTotals[idx];
-                  var pct = budgetChartMax > 0 ? val / budgetChartMax : 0;
-                  var lvl = alertLevel(val, monthBudget);
-                  var col = alertColor(lvl, t);
-                  var mParts = m.split("-");
-                  var mLabel = budgetMNames[parseInt(mParts[1],10)-1];
-                  var isCurrent = m === budgetMonth;
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                <span style={{fontWeight:800,fontSize:13,color:t.text}}>{"8 dernieres semaines"}</span>
+                <div style={{display:"flex",gap:8}}>
+                  <span style={{fontSize:10,color:t.text3,fontWeight:600,display:"flex",alignItems:"center",gap:3}}>
+                    <span style={{width:8,height:8,borderRadius:2,background:t.acc,display:"inline-block"}}/>{"Dep. suppl."}
+                  </span>
+                  <span style={{fontSize:10,color:t.text3,fontWeight:600,display:"flex",alignItems:"center",gap:3}}>
+                    <span style={{width:8,height:8,borderRadius:2,background:t.acc+"55",display:"inline-block"}}/>{"Dep. planifiees"}
+                  </span>
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"flex-end",gap:3,height:90}}>
+                {budgetWeekKeys.map(function(wk,idx){
+                  var actual = budgetWeekActuals[idx];
+                  var est = budgetWeekEsts[idx];
+                  var wBudget = budgetWeekBudgets[idx];
+                  var total = actual + est;
+                  var pA = budgetWeekMax>0 ? actual/budgetWeekMax : 0;
+                  var pE = budgetWeekMax>0 ? est/budgetWeekMax : 0;
+                  var col = alertColor(alertLevel(total,wBudget),t);
+                  var isCur = wk===budgetCurWk;
+                  var isActive = wk===budgetActiveWeek;
+                  var wNum = wk.split("-W")[1];
+                  var hasData = total > 0;
                   return (
-                    <div key={m} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4,cursor:"pointer"}} onClick={function(){setBudgetMonth(m);}}>
-                      {val > 0 && <span style={{fontSize:9,fontWeight:700,color:col}}>{fmtEuro(val)}</span>}
-                      <div style={{width:"100%",background:isCurrent?col:col+"55",borderRadius:"4px 4px 0 0",height:Math.max(pct*64,val>0?4:0)+"px",transition:"height .4s"}}/>
-                      <span style={{fontSize:9,fontWeight:isCurrent?900:600,color:isCurrent?t.text:t.text3}}>{mLabel}</span>
-                      {monthBudget>0 && val>monthBudget && <span style={{fontSize:8,color:"#e53935",fontWeight:800}}>{"!"}</span>}
+                    <div key={wk} onClick={function(){setBudgetActiveWeek(wk===budgetActiveWeek?null:wk);}} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,cursor:"pointer",padding:"2px 1px",borderRadius:4,background:isActive?t.acc+"22":"transparent"}}>
+                      {total>0 && <span style={{fontSize:7,fontWeight:700,color:col}}>{fmtEuro(total)}</span>}
+                      <div style={{width:"100%",display:"flex",flexDirection:"column",justifyContent:"flex-end",flex:1}}>
+                        {est>0 && <div style={{width:"100%",background:t.acc+"55",height:Math.max(pE*65,3)}}/>}
+                        <div style={{width:"100%",background:hasData?(isCur?col:t.acc):t.s1,borderRadius:"3px 3px 0 0",height:hasData?Math.max(pA*65,3):4}}/>
+                      </div>
+                      <span style={{fontSize:7,fontWeight:(isCur||isActive)?900:600,color:(isCur||isActive)?t.acc:t.text3}}>{"S"+wNum}</span>
                     </div>
                   );
                 })}
               </div>
-              <div style={{display:"flex",alignItems:"center",gap:6,marginTop:8}}>
-                <div style={{width:10,height:3,borderRadius:2,background:t.acc+"55"}}/>
-                <span style={{fontSize:10,color:t.text3,fontWeight:600}}>{"Tap sur un mois pour le voir en détail"}</span>
+              {budgetHasChart && (
+                <div style={{marginTop:10,paddingTop:8,borderTop:"1px solid "+t.s1}}>
+                  <div style={{fontSize:11,fontWeight:700,color:t.text2,marginBottom:6}}>{"Tendance mensuelle"}</div>
+                  <div style={{display:"flex",alignItems:"flex-end",gap:3,height:40}}>
+                    {budgetChartMonths.map(function(m,idx){
+                      var val = budgetChartTotals[idx];
+                      var pct = budgetChartMax>0 ? val/budgetChartMax : 0;
+                      var mBudget = getBudgetForPeriod(budgetSchedule,"month",m,monthBudget);
+                      var col = alertColor(alertLevel(val,mBudget),t);
+                      var mParts = m.split("-");
+                      var mLabel = budgetMNames[parseInt(mParts[1],10)-1];
+                      var isCur = m===budgetMonth;
+                      return (
+                        <div key={m} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                          <div style={{width:"100%",background:isCur?col:col+"66",borderRadius:"3px 3px 0 0",height:Math.max(pct*28,val>0?3:0)}}/>
+                          <span style={{fontSize:7,fontWeight:isCur?900:600,color:isCur?t.text:t.text3}}>{mLabel}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Panneau détail semaine sélectionnée */}
+          {budgetActiveWeek && (
+            <div style={{background:t.bg,borderRadius:20,padding:"16px",boxShadow:neu(t),marginBottom:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                <div>
+                  <div style={{fontWeight:800,fontSize:15,color:t.text}}>{"Semaine " + budgetActiveWeek}</div>
+                  <div style={{fontSize:11,color:t.text3,fontWeight:600,marginTop:2}}>{"Dépenses supplémentaires"}</div>
+                </div>
+                <button onClick={function(){setBudgetActiveWeek(null);}} style={{background:t.s1,border:"none",borderRadius:10,width:30,height:30,cursor:"pointer",fontSize:16,color:t.text3}}>{"x"}</button>
               </div>
+              {(function(){
+                var wkExpenses = expenses.filter(function(e){
+                  var eWk = e.weekKey || (e.date ? getWeekKey(new Date(e.date)) : null);
+                  return eWk===budgetActiveWeek;
+                });
+                var wkList = lists.find(function(l){ return l.type==="week" && l.weekKey===budgetActiveWeek; });
+                var wkFreeLists = lists.filter(function(l){ return l.type!=="week" && l.weekKey===budgetActiveWeek; });
+                var wkListCost = budgetActiveWeek ? budgetWeekListCosts[budgetWeekKeys.indexOf(budgetActiveWeek)] || 0 : 0;
+                var wkExpTotal = Math.round(wkExpenses.reduce(function(s,e){ return s+(e.amount||0); },0)*100)/100;
+                var wkTotal = wkExpTotal + (budgetActiveWeek!==budgetCurWk ? wkListCost : budgetWeekEst);
+                var wkBudget = getBudgetForPeriod(budgetSchedule,"week",budgetActiveWeek,weekBudget);
+                return (
+                  <div>
+                    {(wkList || wkFreeLists.length>0) && (
+                      <div style={{background:t.s1,borderRadius:12,padding:"10px 12px",marginBottom:12}}>
+                        <div style={{fontSize:11,fontWeight:800,color:t.text2,marginBottom:8}}>{"Listes de courses"}</div>
+                        {wkList && (
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:wkFreeLists.length>0?"1px solid "+t.bg:"none"}}>
+                            <div>
+                              <span style={{fontSize:12,fontWeight:700,color:t.text}}>{wkList.name}</span>
+                              <span style={{fontSize:10,fontWeight:700,color:t.acc,background:t.acc+"22",borderRadius:6,padding:"1px 6px",marginLeft:6}}>{"sem."}</span>
+                            </div>
+                            <div style={{textAlign:"right"}}>
+                              <div style={{fontSize:13,fontWeight:800,color:t.acc}}>{fmtEuro(calcListCost(wkList))}</div>
+                              <div style={{fontSize:10,color:t.text3}}>{wkList.items.length + " articles"}</div>
+                            </div>
+                          </div>
+                        )}
+                        {wkFreeLists.map(function(fl){
+                          return (
+                            <div key={fl.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid "+t.bg}}>
+                              <div>
+                                <span style={{fontSize:12,fontWeight:700,color:t.text}}>{fl.name}</span>
+                                <span style={{fontSize:10,fontWeight:700,color:"#7c4dff",background:"#7c4dff22",borderRadius:6,padding:"1px 6px",marginLeft:6}}>{"libre"}</span>
+                              </div>
+                              <div style={{textAlign:"right"}}>
+                                <div style={{fontSize:13,fontWeight:800,color:t.acc}}>{fmtEuro(calcListCost(fl))}</div>
+                                <div style={{fontSize:10,color:t.text3}}>{fl.items.length + " articles"}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:8,marginTop:4,borderTop:"1px solid "+t.bg}}>
+                          <span style={{fontSize:11,fontWeight:700,color:t.text2}}>{"Total courses"}</span>
+                          <span style={{fontSize:12,fontWeight:800,color:t.acc}}>{fmtEuro(wkListCost)}</span>
+                        </div>
+                      </div>
+                    )}
+                    {wkExpenses.length>0 && (
+                      <div style={{marginBottom:12}}>
+                        <div style={{fontSize:11,fontWeight:800,color:t.text2,marginBottom:8}}>{"Depenses supplementaires"}</div>
+                        {wkExpenses.map(function(e){
+                          return (
+                            <div key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid "+t.s1}}>
+                              <span style={{fontSize:16}}>{budgetTypeIcons[e.type]||"📝"}</span>
+                              <div style={{flex:1}}>
+                                <div style={{fontWeight:700,fontSize:13,color:t.text}}>{e.label}</div>
+                                <div style={{fontSize:11,color:t.text3,marginTop:1}}>{e.date}</div>
+                              </div>
+                              <span style={{fontWeight:800,fontSize:13,color:t.acc}}>{fmtEuro(e.amount)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                      <span style={{fontSize:12,fontWeight:700,color:t.text2}}>{"Total semaine"}</span>
+                      <span style={{fontSize:16,fontWeight:900,color:alertColor(alertLevel(wkTotal,wkBudget),t)}}>{fmtEuro(wkTotal) + " / " + fmtEuro(wkBudget)}</span>
+                    </div>
+                    <button onClick={function(){
+                      var wkDate = budgetActiveWeek;
+                      var yr = parseInt(wkDate.split("-W")[0],10);
+                      var wn = parseInt(wkDate.split("-W")[1],10);
+                      var jan1 = new Date(yr,0,1);
+                      var dayOfYear = (wn-1)*7 + 1;
+                      var d = new Date(jan1); d.setDate(d.getDate()+dayOfYear);
+                      var dateStr = d.getFullYear()+"-"+(d.getMonth()<9?"0":"")+(d.getMonth()+1)+"-"+(d.getDate()<10?"0":"")+d.getDate();
+                      setExpenseForm({label:"",amount:"",type:"courses",date:dateStr});
+                    }} style={{background:t.acc,border:"none",borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:13,fontWeight:800,color:"#fff",width:"100%",fontFamily:"Nunito,sans-serif"}}>
+                      {"+ Ajouter une dépense pour cette semaine"}
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -1842,6 +2079,13 @@ function App() {
               <div>
                 <div style={{fontSize:15,fontWeight:800,color:t.text}}>Thème</div>
                 <div style={{fontSize:12,color:t.text3,fontWeight:600,marginTop:1}}>{THEMES[themeId].label}</div>
+              </div>
+            </button>
+            <button onClick={function(){setGroupOpen(true);setNavOpen(false);}} style={{background:"none",border:"none",width:"100%",padding:"12px 22px",cursor:"pointer",display:"flex",alignItems:"center",gap:14,fontFamily:"Nunito,sans-serif"}}>
+              <span style={{fontSize:22,flexShrink:0}}>{"👥"}</span>
+              <div style={{textAlign:"left"}}>
+                <div style={{fontSize:15,fontWeight:800,color:t.text}}>{"Mon groupe"}</div>
+                <div style={{fontSize:12,color:t.text3,fontWeight:600,marginTop:1}}>{groupKey ? "Groupe actif" : "Creer ou rejoindre un groupe"}</div>
               </div>
             </button>
           </div>
@@ -2274,27 +2518,62 @@ function App() {
       </Modal>
       {/* ── Modal paramétrage budgets ── */}
       {budgetEditOpen && (
-        <div onClick={function(){setBudgetEditOpen(false);}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+        <div onClick={function(){setBudgetEditOpen(false);}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
           <div onClick={function(e){e.stopPropagation();}} style={{background:t.bg,borderRadius:"22px 22px 0 0",padding:"20px 18px 44px",width:"100%",maxWidth:560,maxHeight:"88vh",overflowY:"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-              <div style={{fontFamily:"Georgia,serif",fontWeight:700,fontSize:16,color:t.text}}>{"Paramétrer les budgets"}</div>
-              <button onClick={function(){setBudgetEditOpen(false);}} style={{background:t.bg,border:"none",borderRadius:10,width:32,height:32,cursor:"pointer",fontSize:18,color:t.text3}}>{"✕"}</button>
+              <div style={{fontFamily:"Georgia,serif",fontWeight:700,fontSize:16,color:t.text}}>{"Parametrer les budgets"}</div>
+              <button onClick={function(){setBudgetEditOpen(false);}} style={{background:t.bg,border:"none",borderRadius:10,width:32,height:32,cursor:"pointer",fontSize:18,color:t.text3}}>{"x"}</button>
             </div>
-            <div style={{marginBottom:16}}>
-              <div style={{fontSize:12,fontWeight:700,color:t.text2,marginBottom:6}}>{"Budget hebdomadaire (€)"}</div>
-              <input type="number" min="0" step="5" style={Object.assign({},inpStyle(t),{width:"100%"})} value={weekBudget} onChange={function(e){var v=parseFloat(e.target.value);if(!isNaN(v)&&v>=0)setWeekBudget(v);}} />
-              <div style={{fontSize:11,color:t.text3,marginTop:4}}>{"Estimation automatique basée sur le planning"}</div>
+            <div style={{background:t.s1,borderRadius:12,padding:"12px 14px",marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:800,color:t.text2,marginBottom:10}}>{"BUDGET PAR DEFAUT"}</div>
+              <div style={{marginBottom:10}}>
+                <div style={{fontSize:12,fontWeight:700,color:t.text2,marginBottom:5}}>{"Budget hebdomadaire (euros)"}</div>
+                <input type="number" min="0" step="5" style={Object.assign({},inpStyle(t),{width:"100%"})} value={weekBudget} onChange={function(e){var v=parseFloat(e.target.value);if(!isNaN(v)&&v>=0)setWeekBudget(v);}} />
+              </div>
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:t.text2,marginBottom:5}}>{"Budget mensuel (euros)"}</div>
+                <input type="number" min="0" step="10" style={Object.assign({},inpStyle(t),{width:"100%"})} value={monthBudget} onChange={function(e){var v=parseFloat(e.target.value);if(!isNaN(v)&&v>=0)setMonthBudget(v);}} />
+              </div>
             </div>
-            <div style={{marginBottom:20}}>
-              <div style={{fontSize:12,fontWeight:700,color:t.text2,marginBottom:6}}>{"Budget mensuel (€)"}</div>
-              <input type="number" min="0" step="10" style={Object.assign({},inpStyle(t),{width:"100%"})} value={monthBudget} onChange={function(e){var v=parseFloat(e.target.value);if(!isNaN(v)&&v>=0)setMonthBudget(v);}} />
-              <div style={{fontSize:11,color:t.text3,marginTop:4}}>{"Alerte à 80% et 100% du budget atteint"}</div>
+            <div style={{background:t.s1,borderRadius:12,padding:"12px 14px",marginBottom:16}}>
+              <div style={{fontSize:11,fontWeight:800,color:t.text2,marginBottom:6}}>{"BUDGET SEMAINE EN COURS"}</div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <input type="number" min="0" step="5"
+                  value={getBudgetForPeriod(budgetSchedule,"week",budgetCurWk,weekBudget)}
+                  onChange={function(e){var v=parseFloat(e.target.value);if(!isNaN(v)&&v>=0){setBudgetSchedule(function(p){return p.filter(function(s){return !(s.type==="week"&&s.dateKey===budgetCurWk);}).concat([{type:"week",dateKey:budgetCurWk,amount:v}]);});}}}
+                  style={Object.assign({},inpStyle(t),{flex:1})}
+                />
+                <span style={{fontSize:11,color:t.text3}}>{"euros/sem"}</span>
+                <button onClick={function(){setBudgetSchedule(function(p){return p.filter(function(s){return !(s.type==="week"&&s.dateKey===budgetCurWk);});});}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:16}}>{"x"}</button>
+              </div>
+              <div style={{fontSize:11,color:t.text2,marginBottom:10,marginTop:12,fontWeight:800}}>{"BUDGET MOIS EN COURS"}</div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <input type="number" min="0" step="10"
+                  value={getBudgetForPeriod(budgetSchedule,"month",budgetMonth,monthBudget)}
+                  onChange={function(e){var v=parseFloat(e.target.value);if(!isNaN(v)&&v>=0){setBudgetSchedule(function(p){return p.filter(function(s){return !(s.type==="month"&&s.dateKey===budgetMonth);}).concat([{type:"month",dateKey:budgetMonth,amount:v}]);});}}}
+                  style={Object.assign({},inpStyle(t),{flex:1})}
+                />
+                <span style={{fontSize:11,color:t.text3}}>{"euros/mois"}</span>
+                <button onClick={function(){setBudgetSchedule(function(p){return p.filter(function(s){return !(s.type==="month"&&s.dateKey===budgetMonth);});});}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:16}}>{"x"}</button>
+              </div>
+              {budgetSchedule.length>0 && (
+                <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid "+t.bg}}>
+                  {budgetSchedule.map(function(s,i){
+                    return (
+                      <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3px 0",fontSize:11,color:t.text}}>
+                        <span>{(s.type==="week"?"Sem. ":"Mois ")+s.dateKey}</span>
+                        <span style={{color:t.acc,fontWeight:700}}>{fmtEuro(s.amount)}</span>
+                        <button onClick={function(){setBudgetSchedule(function(p){return p.filter(function(_,j){return j!==i;});});}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer"}}>{"x"}</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-            <Btn theme={t} accent onClick={function(){setBudgetEditOpen(false);toast("Budgets enregistrés");}}>{"✓ Enregistrer"}</Btn>
+            <Btn theme={t} accent onClick={function(){setBudgetEditOpen(false);toast("Budgets enregistres");}}>{"Enregistrer"}</Btn>
           </div>
         </div>
       )}
-
       {/* ── Modal ajout dépense ── */}
       {expenseForm!==null && (
         <div onClick={function(){setExpenseForm(null);}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
@@ -2330,7 +2609,7 @@ function App() {
                 <Btn theme={t} accent onClick={function(){
                   var amt = parseFloat(expenseForm.amount);
                   if (!expenseForm.label.trim() || isNaN(amt) || amt <= 0) { toast("Remplissez tous les champs", "err"); return; }
-                  var newExp = {id:gid(), label:expenseForm.label.trim(), amount:amt, type:expenseForm.type, date:expenseForm.date};
+                  var expD = new Date(expenseForm.date); var newExp = {id:gid(), label:expenseForm.label.trim(), amount:amt, type:expenseForm.type, date:expenseForm.date, weekKey:getWeekKey(expD)};
                   setExpenses(function(prev){ return prev.concat([newExp]); });
                   setBudgetMonth(expenseForm.date.slice(0,7));
                   setExpenseForm(null);
@@ -2454,39 +2733,79 @@ function App() {
       {/* Bottom sheet sélection de liste active */}
       {listSheetOpen && (
         <div onClick={function(){setListSheetOpen(false);}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-          <div onClick={function(e){e.stopPropagation();}} style={{background:t.bg,borderRadius:"22px 22px 0 0",padding:"16px 16px 36px",width:"100%",maxWidth:600,boxShadow:"0 -4px 24px "+t.s1,maxHeight:"75vh",overflowY:"auto"}}>
+          <div onClick={function(e){e.stopPropagation();}} style={{background:t.bg,borderRadius:"22px 22px 0 0",padding:"16px 16px 44px",width:"100%",maxWidth:560,maxHeight:"80vh",overflowY:"auto"}}>
             <div style={{width:36,height:4,borderRadius:2,background:t.s1,margin:"0 auto 14px"}}/>
-            <div style={{fontFamily:"Georgia,serif",fontSize:17,fontWeight:700,color:t.text,marginBottom:14}}>Mes listes de courses</div>
-            {lists.map(function(lst){
-              var isActive = lst.id===activeList;
-              var pending = lst.items.filter(function(i){ return !(lst.checked||{})[i.id]; }).length;
-              var done = lst.items.length - pending;
-              return (
-                <button key={lst.id} onClick={function(){setActiveList(lst.id);clearSel();setListSheetOpen(false);}}
-                  style={{width:"100%",textAlign:"left",background:isActive?t.acc+"18":t.bg,
-                    border:isActive?"2px solid "+t.acc:"2px solid transparent",
-                    borderRadius:14,padding:"13px 16px",marginBottom:8,cursor:"pointer",
-                    display:"flex",alignItems:"center",gap:12,boxShadow:isActive?nSmI(t):nSm(t),
-                    transition:"all .15s"}}>
-                  <span style={{fontSize:22}}>{isActive?"🛒":"🗒"}</span>
-                  <span style={{flex:1}}>
-                    <span style={{display:"block",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:15,color:isActive?t.acc:t.text}}>{lst.name}</span>
-                    <span style={{display:"block",fontSize:12,color:t.text3,marginTop:2}}>{done} fait · {pending} restant{pending>1?"s":""}</span>
-                  </span>
-                  {isActive && <span style={{fontSize:11,fontWeight:800,color:t.acc,background:t.acc+"22",borderRadius:10,padding:"3px 10px"}}>Active</span>}
-                </button>
-              );
-            })}
-            <button onClick={function(){setListNewOpen(true);setListNewName("");setListSheetOpen(false);}}
-              style={{width:"100%",background:t.bg,border:"2px dashed "+t.s1,borderRadius:14,padding:"12px 16px",cursor:"pointer",
-                display:"flex",alignItems:"center",gap:10,color:t.text2,marginTop:4,boxShadow:nSm(t)}}>
-              <span style={{fontSize:20}}>{"+"}</span>
-              <span style={{fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:14}}>Nouvelle liste</span>
-            </button>
+            {sheetWeekLists.length>0 && (
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:11,fontWeight:900,color:t.text3,letterSpacing:1,marginBottom:8,paddingLeft:2}}>{"COURSES SEMAINE"}</div>
+                {sheetWeekLists.map(function(lst){
+                  var isActive = lst.id===activeList;
+                  var pending = lst.items.filter(function(i){ return !(lst.checked||{})[i.id]; }).length;
+                  var done = lst.items.length - pending;
+                  return (
+                    <button key={lst.id} onClick={function(){setActiveList(lst.id);clearSel();setListSheetOpen(false);}}
+                      style={{width:"100%",textAlign:"left",background:isActive?t.acc+"18":t.bg,border:isActive?"2px solid "+t.acc:"2px solid transparent",borderRadius:14,padding:"12px 14px",marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:12,boxShadow:isActive?nSmI(t):nSm(t)}}>
+                      <span style={{fontSize:20}}>{isActive?"🛒":"🗒"}</span>
+                      <span style={{flex:1}}>
+                        <span style={{display:"block",fontWeight:800,fontSize:14,color:isActive?t.acc:t.text}}>{lst.name}</span>
+                        <span style={{display:"block",fontSize:11,color:t.text3,marginTop:2}}>{done + " fait · " + pending + " restant" + (pending>1?"s":"")}</span>
+                      </span>
+                      {isActive && <span style={{fontSize:11,fontWeight:800,color:t.acc,background:t.acc+"22",borderRadius:10,padding:"2px 8px"}}>{"Active"}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div>
+              <div style={{fontSize:11,fontWeight:900,color:t.text3,letterSpacing:1,marginBottom:8,paddingLeft:2}}>{"COURSES LIBRES"}</div>
+              {sheetFreeLists.map(function(lst){
+                var isActive = lst.id===activeList;
+                var pending = lst.items.filter(function(i){ return !(lst.checked||{})[i.id]; }).length;
+                var done = lst.items.length - pending;
+                var assignedWk = lst.weekKey || null;
+                return (
+                  <div key={lst.id} style={{marginBottom:8}}>
+                    <button onClick={function(){setActiveList(lst.id);clearSel();setListSheetOpen(false);}}
+                      style={{width:"100%",textAlign:"left",background:isActive?t.acc+"18":t.bg,border:isActive?"2px solid "+t.acc:"2px solid transparent",borderRadius:14,padding:"12px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,boxShadow:isActive?nSmI(t):nSm(t)}}>
+                      <span style={{fontSize:20}}>{isActive?"🛒":"🗒"}</span>
+                      <span style={{flex:1}}>
+                        <span style={{display:"block",fontWeight:800,fontSize:14,color:isActive?t.acc:t.text}}>{lst.name}</span>
+                        <span style={{display:"block",fontSize:11,color:t.text3,marginTop:2}}>
+                          {done + " fait · " + pending + " restant" + (pending>1?"s":"")}
+                          {assignedWk && (" · " + assignedWk)}
+                        </span>
+                      </span>
+                      {assignedWk && <span style={{fontSize:10,fontWeight:800,color:"#7c4dff",background:"#7c4dff22",borderRadius:8,padding:"1px 7px",flexShrink:0}}>{"sem."}</span>}
+                      {isActive && !assignedWk && <span style={{fontSize:11,fontWeight:800,color:t.acc,background:t.acc+"22",borderRadius:10,padding:"2px 8px"}}>{"Active"}</span>}
+                    </button>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginTop:4,paddingLeft:4}}>
+                      <span style={{fontSize:10,fontWeight:700,color:t.text3,flexShrink:0}}>{"Semaine :"}</span>
+                      <select
+                        value={assignedWk||""}
+                        onChange={function(e){
+                          var wk = e.target.value;
+                          updList(lst.id, function(l){ return Object.assign({},l,{weekKey:wk||null}); });
+                        }}
+                        style={{flex:1,fontSize:10,fontWeight:600,background:t.s1,border:"1px solid "+t.acc+"44",borderRadius:8,padding:"3px 6px",color:t.text,fontFamily:"Nunito,sans-serif"}}
+                      >
+                        <option value={""}>{"-- Non affectée --"}</option>
+                        {budgetWeekKeys.map(function(wk){
+                          return <option key={wk} value={wk}>{"S" + wk.split("-W")[1] + " " + wk.split("-W")[0]}</option>;
+                        })}
+                      </select>
+                    </div>
+                  </div>
+                );
+              })}
+              <button onClick={function(){setListNewOpen(true);setListNewName("");setListSheetOpen(false);}}
+                style={{width:"100%",background:t.bg,border:"2px dashed "+t.s1,borderRadius:14,padding:"12px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10,color:t.text2,marginTop:4,boxShadow:nSm(t)}}>
+                <span style={{fontSize:18}}>{"+"}</span>
+                <span style={{fontWeight:700,fontSize:14}}>{"Nouvelle liste libre"}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
-
       {/* Modal sélection liste */}
       {listPicker && (
         <div onClick={function(){setListPicker(null);}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
@@ -3009,12 +3328,9 @@ function AiRecipeModal(props) {
     props.setAiLoading(true);
     props.setAiError("");
     var userMsg = AI_RECIPE_PROMPT + " Cree une recette pour : " + props.aiPrompt;
-    fetch("https://api.anthropic.com/v1/messages", {
+    fetch("/api/chat", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "anthropic-version": "2023-06-01"
-      },
+      headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 1024,
@@ -3166,9 +3482,9 @@ function ChatRecipeModal(props) {
       return {role: m.role === "assistant" ? "assistant" : "user", content: m.text};
     });
 
-    fetch("https://api.anthropic.com/v1/messages", {
+    fetch("/api/chat", {
       method: "POST",
-      headers: {"Content-Type": "application/json", "anthropic-version": "2023-06-01"},
+      headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 1024,
