@@ -819,6 +819,7 @@ function App() {
   var _notif = useState(null); var notif = _notif[0]; var setNotif = _notif[1];
   var _picker = useState(null); var picker = _picker[0]; var setPicker = _picker[1];
   var _pickerFilter = useState("Tous"); var pickerFilter = _pickerFilter[0]; var setPickerFilter = _pickerFilter[1];
+  var _pickerSearch = useState(""); var pickerSearch = _pickerSearch[0]; var setPickerSearch = _pickerSearch[1];
   var _cellMenu = useState(null); var cellMenu = _cellMenu[0]; var setCellMenu = _cellMenu[1]; // {day,meal,r}
   var _cellPriceEdit = useState(null); var cellPriceEdit = _cellPriceEdit[0]; var setCellPriceEdit = _cellPriceEdit[1]; // {catId,name,unit,ingUnit,price,tempPrice}
   var _selRec = useState(null); var selRec = _selRec[0]; var setSelRec = _selRec[1];
@@ -2243,25 +2244,44 @@ function App() {
       )}
 
       {/* Picker recette planning */}
-      <Modal theme={t} open={!!picker} onClose={function(){setPicker(null);}} title="Choisir une recette">
+      <Modal theme={t} open={!!picker} onClose={function(){setPicker(null);setPickerSearch("");}} title="Choisir une recette">
         {picker && (
           <div>
+            <input
+              type="text"
+              placeholder="Rechercher une recette..."
+              value={pickerSearch}
+              onChange={function(e){ setPickerSearch(e.target.value); }}
+              style={{width:"100%",padding:"9px 12px",borderRadius:12,border:"1px solid "+t.acc+"55",background:t.s1,color:t.text,fontSize:14,fontFamily:"Nunito,sans-serif",fontWeight:600,marginBottom:12,outline:"none"}}
+            />
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
               {["Tous"].concat(CAT_RECIPES).map(function(cat){
-                return <button key={cat} onClick={function(){setPickerFilter(cat);}} style={{background:t.bg,border:"none",borderRadius:20,padding:"5px 11px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:pickerFilter===cat?t.acc:t.text2,boxShadow:pickerFilter===cat?nSmI(t):nSm(t)}}>{cat}</button>;
+                return <button key={cat} onClick={function(){setPickerFilter(cat);}} style={{background:pickerFilter===cat?t.acc:t.s1,color:pickerFilter===cat?"#fff":t.text,border:"none",borderRadius:20,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"Nunito,sans-serif"}}>{cat}</button>;
               })}
             </div>
-            {recipes.filter(function(r){ return pickerFilter==="Tous"||r.category===pickerFilter; }).map(function(r){
-              return (
-                <div key={r.id} onClick={function(){setPlanner(function(p){ var u=Object.assign({},p); u[picker.day]=Object.assign({},p[picker.day]); u[picker.day][picker.meal]=r.id; return u; }); setPicker(null);}} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:t.bg,borderRadius:14,marginBottom:8,boxShadow:nSm(t),cursor:"pointer"}}>
-                  <span style={{fontSize:22}}>{r.emoji}</span>
-                  <div style={{flex:1}}>
-                    <div style={{fontWeight:700,fontSize:15,color:t.text}}>{r.name}</div>
-                    <div style={{fontSize:13,color:t.text3}}>⏱ {r.time}min · {r.category}</div>
+            {(function(){
+              var filtered = recipes.filter(function(r){
+                var catOk = pickerFilter==="Tous" || r.category===pickerFilter;
+                var search = pickerSearch.trim().toLowerCase();
+                var searchOk = !search || r.name.toLowerCase().indexOf(search) >= 0;
+                return catOk && searchOk;
+              }).slice().sort(function(a,b){ return a.name.localeCompare(b.name,"fr"); });
+              if (filtered.length === 0) {
+                return <div style={{textAlign:"center",padding:"24px 0",color:t.text3,fontSize:14,fontWeight:600}}>{"Aucune recette trouvee"}</div>;
+              }
+              return filtered.map(function(r){
+                return (
+                  <div key={r.id} onClick={function(){setPlanner(function(p){ var u=Object.assign({},p); u[picker.day]=Object.assign({},p[picker.day]||{}); u[picker.day][picker.meal]=r.id; return u; }); setPicker(null); setPickerSearch(""); }}
+                    style={{display:"flex",alignItems:"center",gap:12,padding:"11px 4px",borderBottom:"1px solid "+t.s1,cursor:"pointer"}}>
+                    <span style={{fontSize:22}}>{r.emoji}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:700,fontSize:15,color:t.text}}>{r.name}</div>
+                      <div style={{fontSize:13,color:t.text3}}>{"⏱ " + r.time + "min · " + r.category}</div>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
         )}
       </Modal>
