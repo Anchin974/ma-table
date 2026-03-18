@@ -206,7 +206,8 @@ var DEFAULT_RECIPES = [
   {id:"r_pouletcurry",name:"Poulet au curry et lait de coco",emoji:"🍛",time:40,servings:4,category:"Viande",allergens:[],
    ingredients:[{name:"Filet de poulet",qty:700,unit:"g"},{name:"Oignon",qty:2,unit:"pièces"},{name:"Ail",qty:3,unit:"gousses"},{name:"Gingembre",qty:1,unit:"pièce"},{name:"Curcuma",qty:1,unit:"c.c."},{name:"Cumin",qty:1,unit:"c.c."},{name:"Riz",qty:300,unit:"g"},{name:"Bouillon de volaille",qty:1,unit:"cube"}],
    steps:["Faire revenir oignon, ail et gingembre râpé.","Ajouter épices, cuire 1 min.","Ajouter le poulet en morceaux, dorer 5 min.","Verser le bouillon et mijoter 25 min.","Servir avec le riz cuit."]},
-  {id:"r_flammekueche",name:"Tarte flambée maison",emoji:"🫓",time:30,servings:4,category:"Végétarien",allergens:["Gluten","Lactose","Oeufs"],
+  
+{id:"r_flammekueche",name:"Tarte flambée maison",emoji:"🫓",time:30,servings:4,category:"Végétarien",allergens:["Gluten","Lactose","Oeufs"],
    ingredients:[{name:"Farine",qty:300,unit:"g"},{name:"Crème fraîche",qty:200,unit:"ml"},{name:"Lardons",qty:150,unit:"g"},{name:"Oignon",qty:2,unit:"pièces"},{name:"Fromage râpé",qty:80,unit:"g"},{name:"Beurre",qty:10,unit:"g"},{name:"Sel",qty:1,unit:"c.c."},{name:"Huile d'olive",qty:2,unit:"c.s."}],
    steps:["Mélanger farine, sel, huile et 15cl d'eau tiède. Pétrir 5 min jusqu'à obtenir une pâte lisse.","Laisser reposer la pâte 15 min sous un torchon.","Émincer finement les oignons. Faire revenir les lardons à sec 2 min.","Préchauffer le four à 250°C (thermostat maximum).","Étaler la pâte très finement sur une plaque farinée.","Étaler la crème fraîche, répartir oignons, lardons et fromage râpé.","Enfourner 10 à 12 min jusqu'à ce que les bords soient bien dorés et croustillants."]},
   {id:"r_sportbowl",name:"Bowl riz complet saumon & avocat",emoji:"🥗",time:20,servings:2,category:"Poisson",allergens:["Poisson","Oeufs"],
@@ -3377,7 +3378,7 @@ function AiRecipeModal(props) {
     })
     .catch(function(err) {
       props.setAiLoading(false);
-      props.setAiError("Acces reseau bloque. Utilisez claude.ai sur navigateur desktop.");
+      props.setAiError("Erreur : " + (err && err.message ? err.message : "Verifiez votre connexion et reessayez."));
     });
   }
 
@@ -3537,7 +3538,7 @@ function ChatRecipeModal(props) {
     })
     .catch(function() {
       props.setChatLoading(false);
-      props.setChatMsgs(function(p){ return p.concat([{role:"assistant",text:"Erreur réseau. Disponible sur navigateur web uniquement."}]); });
+      props.setChatMsgs(function(p){ return p.concat([{role:"assistant",text:"Erreur de connexion. Verifiez votre reseau et reessayez."}]); });
     });
   }
 
@@ -3851,6 +3852,7 @@ function ImportModal(props) {
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+
 
   </script>
 </body>
