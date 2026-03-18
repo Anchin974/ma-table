@@ -495,6 +495,20 @@ function unitsCompatible(u1, u2) {
   }
   return false;
 }
+function convertQty(qty, fromUnit, toUnit) {
+  if (!fromUnit || !toUnit) return qty;
+  var f = fromUnit.toLowerCase();
+  var t = toUnit.toLowerCase();
+  if (f === t) return qty;
+  // Volume : tout convertir en litres
+  var toL = {ml:0.001, cl:0.01, dl:0.1, l:1, litre:1, litres:1};
+  if (toL[f] !== undefined && toL[t] !== undefined) return qty * toL[f] / toL[t];
+  // Masse : tout convertir en grammes
+  var toG = {mg:0.001, g:1, gramme:1, grammes:1, kg:1000};
+  if (toG[f] !== undefined && toG[t] !== undefined) return qty * toG[f] / toG[t];
+  return qty;
+}
+
 function estimateCost(recipe, catalogue, servings) {
   if (!recipe || !recipe.ingredients || !recipe.ingredients.length) return null;
   var n = servings || recipe.servings || 4;
@@ -513,7 +527,8 @@ function estimateCost(recipe, catalogue, servings) {
       lines.push({name:ing.name, qty:ing.qty, unit:ing.unit, catUnit:cat?cat.unit:ing.unit, price:lineTotal, catId:cat?cat.id:null, ok:true, ponctuel:true});
     } else if (cat && cat.price) {
       var compat = unitsCompatible(ing.unit, cat.unit);
-      var lineTotal = Math.round(cat.price * (ing.qty || 1) * ratio * 100) / 100;
+      var convQty = convertQty(ing.qty || 1, ing.unit, cat.unit);
+      var lineTotal = Math.round(cat.price * convQty * ratio * 100) / 100;
       if (compat) {
         total += lineTotal;
         matched++;
