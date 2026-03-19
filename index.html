@@ -249,16 +249,15 @@ var DEFAULT_RECIPES = [
 ];
 
 /* ─── STORAGE ─────────────────────────────────────────────────── */
-var SKEY_PERSONAL = "matable_v7";
+/* Tout est stocké en localStorage.                                 */
+/* Mode personnel  : clé SKEY_PERSONAL                             */
+/* Mode groupe     : clé matable_grp_{code} — partagé via          */
+/*                   export/import de code (bouton "Partager")      */
+/* SKEY_PERSONAL = "matable_v7" — NE JAMAIS MODIFIER               */
+var SKEY_PERSONAL  = "matable_v7";
 var SKEY_GROUP_PREFIX = "matable_grp_";
-var SKEY_MSGS_PREFIX = "matable_msgs_";
+var SKEY_MSGS_PREFIX  = "matable_msgs_";
 
-/* ─── DÉTECTION ENVIRONNEMENT ──────────────────────────────────── */
-/* window.storage = API Claude Artifacts (absent sur Vercel)        */
-/* storageAvailable = true seulement si window.storage est présent */
-var storageAvailable = (typeof window !== "undefined" && window.storage && typeof window.storage.get === "function");
-
-/* ─── COUCHE LOCALE (localStorage) ─────────────────────────────── */
 function lsGet(key) {
   try {
     var raw = window.localStorage.getItem(key);
@@ -268,62 +267,43 @@ function lsGet(key) {
 function lsSet(key, data) {
   try { window.localStorage.setItem(key, JSON.stringify(data)); } catch(e) {}
 }
-function lsDel(key) {
-  try { window.localStorage.removeItem(key); } catch(e) {}
-}
 
-/* ─── COUCHE KV VERCEL (mode groupe, données partagées) ─────────── */
-/* API routes : /api/kv-get  /api/kv-set                            */
-function kvLoad(key) {
-  return fetch("/api/kv-get?key=" + encodeURIComponent(key))
-    .then(function(r) { return r.ok ? r.json() : null; })
-    .then(function(d) { return (d && d.value) ? d.value : null; })
-    .catch(function() { return null; });
-}
-function kvSave(key, data) {
-  return fetch("/api/kv-set", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({key: key, value: data})
-  })
-  .then(function(r) { return r.ok ? r.json() : null; })
-  .catch(function() { return null; });
-}
-
-/* ─── COUCHE ABSTRAITE : storageSave / storageLoad ──────────────── */
-/* - shared=false  → toujours localStorage                          */
-/* - shared=true   → window.storage (Artifacts) OU KV Vercel       */
 function storageSave(key, data, shared) {
-  if (!shared) {
-    lsSet(key, data);
-    return Promise.resolve();
-  }
-  if (storageAvailable) {
-    try {
-      var p = window.storage.set(key, JSON.stringify(data), true);
-      if (p && typeof p.then === "function") return p.catch(function(){});
-    } catch(e) {}
-    return Promise.resolve();
-  }
-  return kvSave(key, data);
+  /* shared ignoré — tout va en localStorage */
+  lsSet(key, data);
+  return Promise.resolve();
 }
 function storageLoad(key, shared) {
-  if (!shared) {
-    return Promise.resolve(lsGet(key));
-  }
-  if (storageAvailable) {
-    try {
-      var p = window.storage.get(key, true);
-      if (p && typeof p.then === "function") {
-        return p.then(function(r) {
-          try { return r && r.value ? JSON.parse(r.value) : null; } catch(e) { return null; }
-        }).catch(function() { return null; });
-      }
-    } catch(e) {}
-    return Promise.resolve(null);
-  }
-  return kvLoad(key);
+  return Promise.resolve(lsGet(key));
 }
+
+function saveData(d, mode, groupKey) {
+  if (mode === "group" && groupKey) {
+    return storageSave(SKEY_GROUP_PREFIX + groupKey, d, true);
+  }
+  return storageSave(SKEY_PERSONAL, d, false);
+}
+function loadData(mode, groupKey) {
+  if (mode === "group" && groupKey) {
+    return storageLoad(SKEY_GROUP_PREFIX + groupKey, true);
+  }
+  return storageLoad(SKEY_PERSONAL, false);
+}
+function loadMessages(groupKey) {
+  return storageLoad(SKEY_MSGS_PREFIX + groupKey, true).then(function(d) {
+    return d && d.messages ? d.messages : [];
+  }).catch(function() { return []; });
+}
+function saveMessages(groupKey, messages) {
+  return storageSave(SKEY_MSGS_PREFIX + groupKey, {messages: messages}, true);
+}
+function saveGroupMeta(code, meta) {
+  return storageSave("matable_meta_" + code, meta, true);
+}
+function loadGroupMeta(code) {
+  return storageLoad("matable_meta_" + code, true);
+}
+
 
 function getOrCreateUserId() {
   try {
