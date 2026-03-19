@@ -45,12 +45,12 @@ var CAT_COLORS = {"Viande":"#c0392b","Végétarien":"#27ae60","Poisson":"#2980b9
 
 var TITLE_TEXTURES = {
   neutre:    { label:"Neutre",    emoji:"",    uri:null, text:null, textShadow:null, barFrom:null, barTo:null, barShadow:null, boxShadow:null },
-  bois:      { label:"Bois clair",emoji:"",    uri:"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MDAiIGhlaWdodD0iNTIiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJ3IiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNlOGQ1YTMiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSI1MCUiIHN0b3AtY29sb3I9IiNjOWE4NWMiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjYzBhMDYwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB3aWR0aD0iNjAwIiBoZWlnaHQ9IjUyIiBmaWxsPSJ1cmwoI3cpIi8+CiAgPHBhdGggZD0iTTAsOSBRMTUwLDYgMzAwLDExIFE0NTAsMTYgNjAwLDkiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgxNDAsODAsMTUsMC4yMCkiIHN0cm9rZS13aWR0aD0iMS4yIi8+CiAgPHBhdGggZD0iTTAsMTkgUTEwMCwyMyAyNjAsMTcgUTQwMCwxMSA2MDAsMjEiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgxNTAsOTAsMjAsMC4xNSkiIHN0cm9rZS13aWR0aD0iMC45Ii8+CiAgPHBhdGggZD0iTTAsMjkgUTIwMCwyNSAzNTAsMzEgUTUwMCwzNyA2MDAsMjgiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgxMzAsNzAsMTAsMC4xOCkiIHN0cm9rZS13aWR0aD0iMS4xIi8+CiAgPHBhdGggZD0iTTAsMzkgUTEyMCw0MyAyODAsMzcgUTQzMCwzMSA2MDAsNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgxNDAsODAsMTUsMC4xNCkiIHN0cm9rZS13aWR0aD0iMC44Ii8+CiAgPGxpbmUgeDE9IjAiIHkxPSIxIiB4Mj0iNjAwIiB5Mj0iMSIgc3Ryb2tlPSJyZ2JhKDIxMCwxNzAsODAsMC40MCkiIHN0cm9rZS13aWR0aD0iMS41Ii8+CiAgPGxpbmUgeDE9IjAiIHkxPSI1MSIgeDI9IjYwMCIgeTI9IjUxIiBzdHJva2U9InJnYmEoMTEwLDYwLDgsMC4yOCkiIHN0cm9rZS13aWR0aD0iMSIvPgo8L3N2Zz4=", text:"#2d1200", textShadow:"0 1px 2px rgba(255,220,140,0.5)", barFrom:"#6b3a10", barTo:"#3a1a00", barShadow:"rgba(80,40,0,0.4)", boxShadow:"0 3px 10px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,230,150,0.20)" },
-  boisFonce: { label:"Bois fonce",emoji:"",    uri:"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MDAiIGhlaWdodD0iNTIiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJkdyIgeDE9IjAiIHkxPSIwIiB4Mj0iMCIgeTI9IjEiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjNWMzYTFlIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iNTAlIiBzdG9wLWNvbG9yPSIjM2UyNTEwIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iIzM2MWUwYSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjYwMCIgaGVpZ2h0PSI1MiIgZmlsbD0idXJsKCNkdykiLz4KICA8cGF0aCBkPSJNMCw4IFExNjAsNSAzMjAsMTAgUTQ4MCwxNSA2MDAsOCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2JhKDE4MCwxMTAsNDAsMC4yMikiIHN0cm9rZS13aWR0aD0iMS4zIi8+CiAgPHBhdGggZD0iTTAsMTcgUTExMCwyMSAyNzAsMTUgUTQyMCw5IDYwMCwxOSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2JhKDE2MCw5MCwzMCwwLjE2KSIgc3Ryb2tlLXdpZHRoPSIxIi8+CiAgPHBhdGggZD0iTTAsMjcgUTIyMCwyMyAzNzAsMjkgUTUxMCwzNSA2MDAsMjYiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgxNzAsMTAwLDM1LDAuMTgpIiBzdHJva2Utd2lkdGg9IjEuMiIvPgogIDxwYXRoIGQ9Ik0wLDM3IFExMzAsNDEgMjkwLDM1IFE0NDAsMjkgNjAwLDM5IiBmaWxsPSJub25lIiBzdHJva2U9InJnYmEoMTUwLDg1LDI1LDAuMTQpIiBzdHJva2Utd2lkdGg9IjAuOSIvPgogIDxsaW5lIHgxPSIwIiB5MT0iMSIgeDI9IjYwMCIgeTI9IjEiIHN0cm9rZT0icmdiYSgxODAsMTIwLDUwLDAuMzApIiBzdHJva2Utd2lkdGg9IjEuNSIvPgogIDxsaW5lIHgxPSIwIiB5MT0iNTEiIHgyPSI2MDAiIHkyPSI1MSIgc3Ryb2tlPSJyZ2JhKDIwLDEwLDAsMC40MCkiIHN0cm9rZS13aWR0aD0iMSIvPgo8L3N2Zz4=", text:"#f0d8b0", textShadow:"0 1px 3px rgba(0,0,0,0.7)", barFrom:"#d4a050", barTo:"#8a5010", barShadow:"rgba(180,100,20,0.5)", boxShadow:"0 3px 10px rgba(0,0,0,0.30), inset 0 1px 0 rgba(200,140,60,0.18)" },
-  cuir:      { label:"Cuir",      emoji:"",    uri:"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MDAiIGhlaWdodD0iNTIiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJsIiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiM2YjNhMWYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSI1NSUiIHN0b3AtY29sb3I9IiM3YTQyMjUiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjNGEyNTEwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB3aWR0aD0iNjAwIiBoZWlnaHQ9IjUyIiBmaWxsPSJ1cmwoI2wpIi8+CiAgPGxpbmUgeDE9IjEwIiB5MT0iNSIgeDI9IjU5MCIgeTI9IjUiIHN0cm9rZT0icmdiYSgyNTUsMjAwLDEyMCwwLjI1KSIgc3Ryb2tlLXdpZHRoPSIxIiBzdHJva2UtZGFzaGFycmF5PSI2LDQiLz4KICA8bGluZSB4MT0iMTAiIHkxPSI0NyIgeDI9IjU5MCIgeTI9IjQ3IiBzdHJva2U9InJnYmEoMjU1LDIwMCwxMjAsMC4yNSkiIHN0cm9rZS13aWR0aD0iMSIgc3Ryb2tlLWRhc2hhcnJheT0iNiw0Ii8+CiAgPGxpbmUgeDE9IjAiIHkxPSIxIiB4Mj0iNjAwIiB5Mj0iMSIgc3Ryb2tlPSJyZ2JhKDI1NSwyMDAsMTIwLDAuMjApIiBzdHJva2Utd2lkdGg9IjEiLz4KICA8bGluZSB4MT0iMCIgeTE9IjUxIiB4Mj0iNjAwIiB5Mj0iNTEiIHN0cm9rZT0icmdiYSgwLDAsMCwwLjM1KSIgc3Ryb2tlLXdpZHRoPSIxIi8+Cjwvc3ZnPg==", text:"#f5e0c0", textShadow:"0 1px 3px rgba(0,0,0,0.6)", barFrom:"#f0c060", barTo:"#c07820", barShadow:"rgba(200,120,20,0.5)", boxShadow:"0 3px 10px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,200,120,0.15)" },
-  parchemin: { label:"Parchemin", emoji:"",    uri:"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MDAiIGhlaWdodD0iNTIiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJwYSIgeDE9IjAiIHkxPSIwIiB4Mj0iMCIgeTI9IjEiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjZjVlOWM4Ii8+CiAgICAgIDxzdG9wIG9mZnNldD0iNjUlIiBzdG9wLWNvbG9yPSIjZThkMDk1Ii8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iI2RjYzQ4MCIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjYwMCIgaGVpZ2h0PSI1MiIgZmlsbD0idXJsKCNwYSkiLz4KICA8cGF0aCBkPSJNMCwxNSBRMTUwLDEyIDMwMCwxNiBRNDUwLDIwIDYwMCwxNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2JhKDE0MCwxMDAsMzAsMC4xNSkiIHN0cm9rZS13aWR0aD0iMC44Ii8+CiAgPHBhdGggZD0iTTAsMzAgUTIwMCwyNyAzNTAsMzIgUTQ4MCwzNiA2MDAsMjgiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgxMjAsODAsMjAsMC4xMikiIHN0cm9rZS13aWR0aD0iMC43Ii8+CiAgPGxpbmUgeDE9IjAiIHkxPSIxIiB4Mj0iNjAwIiB5Mj0iMSIgc3Ryb2tlPSJyZ2JhKDE2MCwxMTAsMzAsMC4zNSkiIHN0cm9rZS13aWR0aD0iMSIvPgogIDxsaW5lIHgxPSIwIiB5MT0iNTEiIHgyPSI2MDAiIHkyPSI1MSIgc3Ryb2tlPSJyZ2JhKDE0MCw5MCwyMCwwLjMwKSIgc3Ryb2tlLXdpZHRoPSIxIi8+Cjwvc3ZnPg==", text:"#3a2000", textShadow:"0 1px 2px rgba(255,230,160,0.4)", barFrom:"#8b5e10", barTo:"#4a2800", barShadow:"rgba(100,60,10,0.45)", boxShadow:"0 3px 10px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,240,180,0.25)" },
-  lin:       { label:"Lin",       emoji:"",    uri:"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MDAiIGhlaWdodD0iNTIiPgogIDxkZWZzPgogICAgPHBhdHRlcm4gaWQ9ImxuIiB4PSIwIiB5PSIwIiB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj4KICAgICAgPHJlY3Qgd2lkdGg9IjQiIGhlaWdodD0iNCIgZmlsbD0iI2Q5YzlhOCIvPgogICAgICA8bGluZSB4MT0iMCIgeTE9IjAiIHgyPSI0IiB5Mj0iMCIgc3Ryb2tlPSJyZ2JhKDE4MCwxNTAsOTAsMC4zNSkiIHN0cm9rZS13aWR0aD0iMC44Ii8+CiAgICAgIDxsaW5lIHgxPSIwIiB5MT0iMiIgeDI9IjQiIHkyPSIyIiBzdHJva2U9InJnYmEoMjAwLDE3MCwxMTAsMC4yMCkiIHN0cm9rZS13aWR0aD0iMC41Ii8+CiAgICAgIDxsaW5lIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSI0IiBzdHJva2U9InJnYmEoMTgwLDE1MCw5MCwwLjMwKSIgc3Ryb2tlLXdpZHRoPSIwLjgiLz4KICAgICAgPGxpbmUgeDE9IjIiIHkxPSIwIiB4Mj0iMiIgeTI9IjQiIHN0cm9rZT0icmdiYSgyMDAsMTcwLDExMCwwLjE4KSIgc3Ryb2tlLXdpZHRoPSIwLjUiLz4KICAgIDwvcGF0dGVybj4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjYwMCIgaGVpZ2h0PSI1MiIgZmlsbD0idXJsKCNsbikiLz4KICA8bGluZSB4MT0iMCIgeTE9IjEiIHgyPSI2MDAiIHkyPSIxIiBzdHJva2U9InJnYmEoMTYwLDEzMCw3MCwwLjQwKSIgc3Ryb2tlLXdpZHRoPSIxLjUiLz4KICA8bGluZSB4MT0iMCIgeTE9IjUxIiB4Mj0iNjAwIiB5Mj0iNTEiIHN0cm9rZT0icmdiYSgxNDAsMTEwLDU1LDAuMzUpIiBzdHJva2Utd2lkdGg9IjEiLz4KPC9zdmc+", text:"#2a1e08", textShadow:"0 1px 2px rgba(255,240,200,0.4)", barFrom:"#7a5c20", barTo:"#3a2800", barShadow:"rgba(90,65,15,0.45)", boxShadow:"0 3px 8px rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,245,210,0.22)" },
-  ardoise:   { label:"Ardoise",   emoji:"",    uri:"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MDAiIGhlaWdodD0iNTIiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJzbGEiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iIzNhM2Q0MiIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjcwJSIgc3RvcC1jb2xvcj0iIzI1MjgzMCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiMxZTIwMjgiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgPC9kZWZzPgogIDxyZWN0IHdpZHRoPSI2MDAiIGhlaWdodD0iNTIiIGZpbGw9InVybCgjc2xhKSIvPgogIDxwYXRoIGQ9Ik0wLDE4IFExNTAsMTUgMzAwLDIwIFE0NTAsMjUgNjAwLDE3IiBmaWxsPSJub25lIiBzdHJva2U9InJnYmEoMTgwLDE5MCwyMTAsMC4wOCkiIHN0cm9rZS13aWR0aD0iMSIvPgogIDxwYXRoIGQ9Ik0wLDM0IFEyMDAsMzAgMzgwLDM2IFE1MjAsNDAgNjAwLDMyIiBmaWxsPSJub25lIiBzdHJva2U9InJnYmEoMTgwLDE5MCwyMTAsMC4wNikiIHN0cm9rZS13aWR0aD0iMC44Ii8+CiAgPGxpbmUgeDE9IjAiIHkxPSIxIiB4Mj0iNjAwIiB5Mj0iMSIgc3Ryb2tlPSJyZ2JhKDE4MCwxOTAsMjEwLDAuMjApIiBzdHJva2Utd2lkdGg9IjEiLz4KICA8bGluZSB4MT0iMCIgeTE9IjUxIiB4Mj0iNjAwIiB5Mj0iNTEiIHN0cm9rZT0icmdiYSgwLDAsMCwwLjQwKSIgc3Ryb2tlLXdpZHRoPSIxIi8+Cjwvc3ZnPg==", text:"#e8edf5", textShadow:"0 1px 4px rgba(0,0,0,0.7)", barFrom:"#7090c0", barTo:"#3050a0", barShadow:"rgba(70,100,180,0.5)", boxShadow:"0 3px 12px rgba(0,0,0,0.35), inset 0 1px 0 rgba(180,200,230,0.12)" }
+  bois:      { label:"Bois clair",emoji:"",    uri:null, text:"#2d1200", textShadow:"0 1px 2px rgba(255,220,140,0.5)", barFrom:"#6b3a10", barTo:"#3a1a00", barShadow:"rgba(80,40,0,0.4)", boxShadow:"0 3px 10px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,230,150,0.20)" },
+  boisFonce: { label:"Bois fonce",emoji:"",    uri:null, text:"#f0d8b0", textShadow:"0 1px 3px rgba(0,0,0,0.7)", barFrom:"#d4a050", barTo:"#8a5010", barShadow:"rgba(180,100,20,0.5)", boxShadow:"0 3px 10px rgba(0,0,0,0.30), inset 0 1px 0 rgba(200,140,60,0.18)" },
+  cuir:      { label:"Cuir",      emoji:"",    uri:null, text:"#f5e0c0", textShadow:"0 1px 3px rgba(0,0,0,0.6)", barFrom:"#f0c060", barTo:"#c07820", barShadow:"rgba(200,120,20,0.5)", boxShadow:"0 3px 10px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,200,120,0.15)" },
+  parchemin: { label:"Parchemin", emoji:"",    uri:null, text:"#3a2000", textShadow:"0 1px 2px rgba(255,230,160,0.4)", barFrom:"#8b5e10", barTo:"#4a2800", barShadow:"rgba(100,60,10,0.45)", boxShadow:"0 3px 10px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,240,180,0.25)" },
+  lin:       { label:"Lin",       emoji:"",    uri:null, text:"#2a1e08", textShadow:"0 1px 2px rgba(255,240,200,0.4)", barFrom:"#7a5c20", barTo:"#3a2800", barShadow:"rgba(90,65,15,0.45)", boxShadow:"0 3px 8px rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,245,210,0.22)" },
+  ardoise:   { label:"Ardoise",   emoji:"",    uri:null, text:"#e8edf5", textShadow:"0 1px 4px rgba(0,0,0,0.7)", barFrom:"#7090c0", barTo:"#3050a0", barShadow:"rgba(70,100,180,0.5)", boxShadow:"0 3px 12px rgba(0,0,0,0.35), inset 0 1px 0 rgba(180,200,230,0.12)" }
 };
 
 var MEAL_COLORS = {"Petit-déj":"#f39c12","Déjeuner":"#27ae60","Dîner":"#2c3e50"};
@@ -249,61 +249,44 @@ var DEFAULT_RECIPES = [
 ];
 
 /* ─── STORAGE ─────────────────────────────────────────────────── */
-/* Tout est stocké en localStorage.                                 */
-/* Mode personnel  : clé SKEY_PERSONAL                             */
-/* Mode groupe     : clé matable_grp_{code} — partagé via          */
-/*                   export/import de code (bouton "Partager")      */
-/* SKEY_PERSONAL = "matable_v7" — NE JAMAIS MODIFIER               */
-var SKEY_PERSONAL  = "matable_v7";
+/* 100% localStorage — NE JAMAIS modifier SKEY_PERSONAL             */
+var SKEY_PERSONAL    = "matable_v7";
 var SKEY_GROUP_PREFIX = "matable_grp_";
 var SKEY_MSGS_PREFIX  = "matable_msgs_";
 
 function lsGet(key) {
-  try {
-    var raw = window.localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : null;
-  } catch(e) { return null; }
+  try { var r = window.localStorage.getItem(key); return r ? JSON.parse(r) : null; } catch(e) { return null; }
 }
 function lsSet(key, data) {
   try { window.localStorage.setItem(key, JSON.stringify(data)); } catch(e) {}
 }
-
-function storageSave(key, data, shared) {
-  /* shared ignoré — tout va en localStorage */
+function storageSave(key, data) {
   lsSet(key, data);
   return Promise.resolve();
 }
-function storageLoad(key, shared) {
+function storageLoad(key) {
   return Promise.resolve(lsGet(key));
 }
-
 function saveData(d, mode, groupKey) {
-  if (mode === "group" && groupKey) {
-    return storageSave(SKEY_GROUP_PREFIX + groupKey, d, true);
-  }
-  return storageSave(SKEY_PERSONAL, d, false);
+  return mode === "group" && groupKey
+    ? storageSave(SKEY_GROUP_PREFIX + groupKey, d)
+    : storageSave(SKEY_PERSONAL, d);
 }
 function loadData(mode, groupKey) {
-  if (mode === "group" && groupKey) {
-    return storageLoad(SKEY_GROUP_PREFIX + groupKey, true);
-  }
-  return storageLoad(SKEY_PERSONAL, false);
+  return mode === "group" && groupKey
+    ? storageLoad(SKEY_GROUP_PREFIX + groupKey)
+    : storageLoad(SKEY_PERSONAL);
 }
 function loadMessages(groupKey) {
-  return storageLoad(SKEY_MSGS_PREFIX + groupKey, true).then(function(d) {
-    return d && d.messages ? d.messages : [];
-  }).catch(function() { return []; });
+  return storageLoad(SKEY_MSGS_PREFIX + groupKey)
+    .then(function(d) { return d && d.messages ? d.messages : []; })
+    .catch(function() { return []; });
 }
 function saveMessages(groupKey, messages) {
-  return storageSave(SKEY_MSGS_PREFIX + groupKey, {messages: messages}, true);
+  return storageSave(SKEY_MSGS_PREFIX + groupKey, {messages: messages});
 }
-function saveGroupMeta(code, meta) {
-  return storageSave("matable_meta_" + code, meta, true);
-}
-function loadGroupMeta(code) {
-  return storageLoad("matable_meta_" + code, true);
-}
-
+function saveGroupMeta(code, meta) { return storageSave("matable_meta_" + code, meta); }
+function loadGroupMeta(code)       { return storageLoad("matable_meta_" + code); }
 
 function getOrCreateUserId() {
   try {
@@ -323,35 +306,6 @@ function genGroupCode() {
   return code;
 }
 
-function saveData(d, mode, groupKey) {
-  if (mode === "group" && groupKey) {
-    return storageSave(SKEY_GROUP_PREFIX + groupKey, d, true);
-  }
-  return storageSave(SKEY_PERSONAL, d, false);
-}
-function loadData(mode, groupKey) {
-  if (mode === "group" && groupKey) {
-    return storageLoad(SKEY_GROUP_PREFIX + groupKey, true);
-  }
-  return storageLoad(SKEY_PERSONAL, false);
-}
-
-function loadMessages(groupKey) {
-  return storageLoad(SKEY_MSGS_PREFIX + groupKey, true).then(function(d) {
-    return d && d.messages ? d.messages : [];
-  }).catch(function() { return []; });
-}
-function saveMessages(groupKey, messages) {
-  return storageSave(SKEY_MSGS_PREFIX + groupKey, {messages: messages}, true);
-}
-
-/* Métadonnées groupe */
-function saveGroupMeta(code, meta) {
-  return storageSave("matable_meta_" + code, meta, true);
-}
-function loadGroupMeta(code) {
-  return storageLoad("matable_meta_" + code, true);
-}
 
 /* ─── MINI COMPOSANTS ─────────────────────────────────────────── */
 function Btn(props) {
