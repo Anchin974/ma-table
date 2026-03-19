@@ -281,23 +281,63 @@ function genGroupCode() {
   return code;
 }
 
+function hasCloudStorage() {
+  return typeof window !== "undefined" && window.storage && typeof window.storage.set === "function";
+}
+function lsKey(key, shared) {
+  return shared ? "matable_shared_" + key : "matable_local_" + key;
+}
 function storageSave(key, data, shared) {
-  try {
-    var p = window.storage.set(key, JSON.stringify(data), shared||false);
-    if (p && typeof p.then === "function") return p.catch(function(){});
-  } catch(e) {}
+  var json = JSON.stringify(data);
+  if (hasCloudStorage()) {
+    try {
+      var p = window.storage.set(key, json, shared||false);
+      if (p && typeof p.then === "function") {
+        return p.then(function() {
+          // Aussi sauvegarder en localStorage comme backup
+          try { window.localStorage.setItem(lsKey(key, shared), json); } catch(e2) {}
+        }).catch(function() {
+          try { window.localStorage.setItem(lsKey(key, shared), json); } catch(e2) {}
+        });
+      }
+    } catch(e) {}
+  }
+  // Fallback localStorage
+  try { window.localStorage.setItem(lsKey(key, shared), json); } catch(e) {}
   return Promise.resolve();
 }
 function storageLoad(key, shared) {
-  try {
-    var p = window.storage.get(key, shared||false);
-    if (p && typeof p.then === "function") {
-      return p.then(function(r) {
-        try { return r && r.value ? JSON.parse(r.value) : null; } catch(e) { return null; }
-      }).catch(function() { return null; });
-    }
-  } catch(e) {}
-  return Promise.resolve(null);
+  if (hasCloudStorage()) {
+    try {
+      var p = window.storage.get(key, shared||false);
+      if (p && typeof p.then === "function") {
+        return p.then(function(r) {
+          if (r && r.value) {
+            try { return JSON.parse(r.value); } catch(e) {}
+          }
+          // Fallback localStorage si cloud vide
+          try {
+            var local = window.localStorage.getItem(lsKey(key, shared));
+            if (local) return JSON.parse(local);
+          } catch(e2) {}
+          return null;
+        }).catch(function() {
+          try {
+            var local = window.localStorage.getItem(lsKey(key, shared));
+            if (local) return JSON.parse(local);
+          } catch(e2) {}
+          return null;
+        });
+      }
+    } catch(e) {}
+  }
+  // Fallback localStorage uniquement
+  return new Promise(function(resolve) {
+    try {
+      var local = window.localStorage.getItem(lsKey(key, shared));
+      resolve(local ? JSON.parse(local) : null);
+    } catch(e) { resolve(null); }
+  });
 }
 
 function saveData(d, mode, groupKey) {
