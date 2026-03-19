@@ -281,63 +281,23 @@ function genGroupCode() {
   return code;
 }
 
-function hasCloudStorage() {
-  return typeof window !== "undefined" && window.storage && typeof window.storage.set === "function";
-}
-function lsKey(key, shared) {
-  return shared ? "matable_shared_" + key : "matable_local_" + key;
-}
 function storageSave(key, data, shared) {
-  var json = JSON.stringify(data);
-  if (hasCloudStorage()) {
-    try {
-      var p = window.storage.set(key, json, shared||false);
-      if (p && typeof p.then === "function") {
-        return p.then(function() {
-          // Aussi sauvegarder en localStorage comme backup
-          try { window.localStorage.setItem(lsKey(key, shared), json); } catch(e2) {}
-        }).catch(function() {
-          try { window.localStorage.setItem(lsKey(key, shared), json); } catch(e2) {}
-        });
-      }
-    } catch(e) {}
-  }
-  // Fallback localStorage
-  try { window.localStorage.setItem(lsKey(key, shared), json); } catch(e) {}
+  try {
+    var p = window.storage.set(key, JSON.stringify(data), shared||false);
+    if (p && typeof p.then === "function") return p.catch(function(){});
+  } catch(e) {}
   return Promise.resolve();
 }
 function storageLoad(key, shared) {
-  if (hasCloudStorage()) {
-    try {
-      var p = window.storage.get(key, shared||false);
-      if (p && typeof p.then === "function") {
-        return p.then(function(r) {
-          if (r && r.value) {
-            try { return JSON.parse(r.value); } catch(e) {}
-          }
-          // Fallback localStorage si cloud vide
-          try {
-            var local = window.localStorage.getItem(lsKey(key, shared));
-            if (local) return JSON.parse(local);
-          } catch(e2) {}
-          return null;
-        }).catch(function() {
-          try {
-            var local = window.localStorage.getItem(lsKey(key, shared));
-            if (local) return JSON.parse(local);
-          } catch(e2) {}
-          return null;
-        });
-      }
-    } catch(e) {}
-  }
-  // Fallback localStorage uniquement
-  return new Promise(function(resolve) {
-    try {
-      var local = window.localStorage.getItem(lsKey(key, shared));
-      resolve(local ? JSON.parse(local) : null);
-    } catch(e) { resolve(null); }
-  });
+  try {
+    var p = window.storage.get(key, shared||false);
+    if (p && typeof p.then === "function") {
+      return p.then(function(r) {
+        try { return r && r.value ? JSON.parse(r.value) : null; } catch(e) { return null; }
+      }).catch(function() { return null; });
+    }
+  } catch(e) {}
+  return Promise.resolve(null);
 }
 
 function saveData(d, mode, groupKey) {
@@ -355,10 +315,20 @@ function loadData(mode, groupKey) {
 
 /* Métadonnées groupe — stockées en shared avec la clé matable_meta_{code} */
 function saveGroupMeta(code, meta) {
+  // Sauvegarder en localStorage (fonctionne sur Vercel) ET dans window.storage si dispo
+  try { window.localStorage.setItem("matable_meta_" + code, JSON.stringify(meta)); } catch(e) {}
   return storageSave("matable_meta_" + code, meta, true);
 }
 function loadGroupMeta(code) {
-  return storageLoad("matable_meta_" + code, true);
+  // Essayer window.storage d abord, fallback localStorage
+  return storageLoad("matable_meta_" + code, true).then(function(d) {
+    if (d) return d;
+    try {
+      var local = window.localStorage.getItem("matable_meta_" + code);
+      if (local) return JSON.parse(local);
+    } catch(e) {}
+    return null;
+  });
 }
 
 /* ─── MINI COMPOSANTS ─────────────────────────────────────────── */
@@ -965,6 +935,13 @@ function App() {
       var savedAuthor = window.localStorage.getItem("matable_author");
       if (savedAuthor) { setMsgAuthor(savedAuthor); setMsgAuthorSet(true); }
     } catch(e) {}
+    // Restaurer groupMeta depuis localStorage si mode groupe
+    try {
+      if (getLocalMode() === "group" && getLocalGroupKey()) {
+        var savedMeta = window.localStorage.getItem("matable_groupmeta");
+        if (savedMeta) setGroupMeta(JSON.parse(savedMeta));
+      }
+    } catch(e) {}
   }, []);
 
   useEffect(function() {
@@ -1016,6 +993,14 @@ function App() {
     setGroupKey(newKey || null);
     setLocalGroupKey(newKey || null);
     setGroupMeta(newMeta || null);
+    // Persister groupMeta dans localStorage
+    try {
+      if (newMeta && newKey) {
+        window.localStorage.setItem("matable_groupmeta", JSON.stringify(newMeta));
+      } else {
+        window.localStorage.removeItem("matable_groupmeta");
+      }
+    } catch(e) {}
     setLoaded(false);
     loadData(newMode, newKey).then(function(d) {
       applyData(d);
