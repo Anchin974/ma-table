@@ -249,44 +249,69 @@ var DEFAULT_RECIPES = [
 ];
 
 /* ─── STORAGE ─────────────────────────────────────────────────── */
-/* 100% localStorage — NE JAMAIS modifier SKEY_PERSONAL             */
+/* Données personnelles  → localStorage (clé SKEY_PERSONAL)        */
+/* Données groupe        → Upstash Redis via /api/kv-get /api/kv-set*/
+/* NE JAMAIS modifier SKEY_PERSONAL (perte des données utilisateur) */
 var SKEY_PERSONAL    = "matable_v7";
 var SKEY_GROUP_PREFIX = "matable_grp_";
 var SKEY_MSGS_PREFIX  = "matable_msgs_";
 
+/* ── localStorage (mode personnel) ─────────────────────────────── */
 function lsGet(key) {
   try { var r = window.localStorage.getItem(key); return r ? JSON.parse(r) : null; } catch(e) { return null; }
 }
 function lsSet(key, data) {
   try { window.localStorage.setItem(key, JSON.stringify(data)); } catch(e) {}
 }
-function storageSave(key, data) {
+
+/* ── Upstash REST (mode groupe, données partagées) ──────────────── */
+function kvGet(key) {
+  return fetch("/api/kv-get?key=" + encodeURIComponent(key))
+    .then(function(r) { return r.ok ? r.json() : {value: null}; })
+    .then(function(d) { return d && d.value !== undefined ? d.value : null; })
+    .catch(function() { return null; });
+}
+function kvSet(key, data) {
+  return fetch("/api/kv-set", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({key: key, value: data})
+  })
+  .then(function(r) { return r.ok ? r.json() : null; })
+  .catch(function() { return null; });
+}
+
+/* ── Couche unifiée ─────────────────────────────────────────────── */
+function storageSave(key, data, shared) {
+  if (shared) return kvSet(key, data);
   lsSet(key, data);
   return Promise.resolve();
 }
-function storageLoad(key) {
+function storageLoad(key, shared) {
+  if (shared) return kvGet(key);
   return Promise.resolve(lsGet(key));
 }
 function saveData(d, mode, groupKey) {
   return mode === "group" && groupKey
-    ? storageSave(SKEY_GROUP_PREFIX + groupKey, d)
-    : storageSave(SKEY_PERSONAL, d);
+    ? storageSave(SKEY_GROUP_PREFIX + groupKey, d, true)
+    : storageSave(SKEY_PERSONAL, d, false);
 }
 function loadData(mode, groupKey) {
   return mode === "group" && groupKey
-    ? storageLoad(SKEY_GROUP_PREFIX + groupKey)
-    : storageLoad(SKEY_PERSONAL);
+    ? storageLoad(SKEY_GROUP_PREFIX + groupKey, true)
+    : storageLoad(SKEY_PERSONAL, false);
 }
 function loadMessages(groupKey) {
-  return storageLoad(SKEY_MSGS_PREFIX + groupKey)
+  return storageLoad(SKEY_MSGS_PREFIX + groupKey, true)
     .then(function(d) { return d && d.messages ? d.messages : []; })
     .catch(function() { return []; });
 }
 function saveMessages(groupKey, messages) {
-  return storageSave(SKEY_MSGS_PREFIX + groupKey, {messages: messages});
+  return storageSave(SKEY_MSGS_PREFIX + groupKey, {messages: messages}, true);
 }
-function saveGroupMeta(code, meta) { return storageSave("matable_meta_" + code, meta); }
-function loadGroupMeta(code)       { return storageLoad("matable_meta_" + code); }
+function saveGroupMeta(code, meta) { return storageSave("matable_meta_" + code, meta, true); }
+function loadGroupMeta(code)       { return storageLoad("matable_meta_" + code, true); }
+
 
 function getOrCreateUserId() {
   try {
@@ -305,6 +330,7 @@ function genGroupCode() {
   for (var i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
   return code;
 }
+
 
 
 /* ─── MINI COMPOSANTS ─────────────────────────────────────────── */
