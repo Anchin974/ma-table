@@ -884,13 +884,27 @@ function App() {
     }
     // Timeout fallback — never stay stuck
     var timeout = setTimeout(function() { finish(null); }, 3000);
-    loadData(getLocalMode(), getLocalGroupKey()).then(function(d) {
+    var initMode = getLocalMode();
+    var initKey  = getLocalGroupKey();
+    loadData(initMode, initKey).then(function(d) {
       clearTimeout(timeout);
       finish(d);
     }).catch(function() {
       clearTimeout(timeout);
       finish(null);
     });
+    /* Charger les métadonnées du groupe si on est en mode groupe */
+    if (initMode === "group" && initKey) {
+      loadGroupMeta(initKey).then(function(meta) {
+        if (meta) { setGroupMeta(meta); }
+        else {
+          /* Meta absente — recréer une meta minimale pour ne pas bloquer la modale */
+          var fallback = { name: "Mon Groupe", createdBy: getOrCreateUserId(), code: initKey, createdAt: Date.now() };
+          saveGroupMeta(initKey, fallback);
+          setGroupMeta(fallback);
+        }
+      }).catch(function() {});
+    }
     try {
       var savedAuthor = window.localStorage.getItem("matable_author");
       if (savedAuthor) { setMsgAuthor(savedAuthor); setMsgAuthorSet(true); }
