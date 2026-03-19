@@ -922,12 +922,12 @@ function App() {
     /* Charger les métadonnées du groupe si on est en mode groupe */
     if (initMode === "group" && initKey) {
       loadGroupMeta(initKey).then(function(meta) {
-        if (meta) { setGroupMeta(meta); }
-        else {
-          /* Meta absente — recréer une meta minimale pour ne pas bloquer la modale */
-          var fallback = { name: "Mon Groupe", createdBy: getOrCreateUserId(), code: initKey, createdAt: Date.now() };
-          saveGroupMeta(initKey, fallback);
-          setGroupMeta(fallback);
+        if (meta) {
+          setGroupMeta(meta);
+        } else {
+          /* Meta introuvable sur Upstash — repasser en mode personnel proprement */
+          setLocalMode("personal");
+          setLocalGroupKey(null);
         }
       }).catch(function() {});
     }
