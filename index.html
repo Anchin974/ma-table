@@ -1,4 +1,18 @@
-import { useState, useEffect, useRef } from "react";
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <title>Ma Table</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>* { margin:0; padding:0; box-sizing:border-box; } body { font-family: Nunito, sans-serif; }</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+var { useState, useEffect, useRef } = React;
 
 /* ─── THEMES ──────────────────────────────────────────────────── */
 var THEMES = {
@@ -507,8 +521,8 @@ function findCatProduct(ingName, catalogue) {
     // Le nom catalogue doit avoir >= 4 chars pour éviter les faux positifs courts
     if (pLow.length < 4 && nameLow !== pLow) return false;
     // Vérifier que pLow est un mot/groupe entier dans nameLow (entouré de séparateurs)
-    var reCat = new RegExp("(^|\\s)" + pLow.replace(/[.*+?^${}()|[\]\\]/g,"\\$&") + "(\\s|$)");
-    var reIng = new RegExp("(^|\\s)" + nameLow.replace(/[.*+?^${}()|[\]\\]/g,"\\$&") + "(\\s|$)");
+    var reCat = new RegExp("(^|\s)" + pLow.replace(/[.*+?^${}()|[\]\]/g,"\$&") + "(\s|$)");
+    var reIng = new RegExp("(^|\s)" + nameLow.replace(/[.*+?^${}()|[\]\]/g,"\$&") + "(\s|$)");
     return reCat.test(nameLow) || reIng.test(pLow);
   });
 }
@@ -3876,5 +3890,7 @@ function ImportModal(props) {
     )
   );
 }
-
-export default App;
+ReactDOM.render(React.createElement(App), document.getElementById("root"));
+  </script>
+</body>
+</html>
