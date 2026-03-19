@@ -1,18 +1,4 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
-  <title>Ma Table</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-  <style>* { margin:0; padding:0; box-sizing:border-box; } body { font-family: Nunito, sans-serif; }</style>
-</head>
-<body>
-  <div id="root"></div>
-  <script type="text/babel">
-var { useState, useEffect, useRef } = React;
+import { useState, useEffect, useRef } from "react";
 
 /* ─── THEMES ──────────────────────────────────────────────────── */
 var THEMES = {
@@ -206,8 +192,7 @@ var DEFAULT_RECIPES = [
   {id:"r_pouletcurry",name:"Poulet au curry et lait de coco",emoji:"🍛",time:40,servings:4,category:"Viande",allergens:[],
    ingredients:[{name:"Filet de poulet",qty:700,unit:"g"},{name:"Oignon",qty:2,unit:"pièces"},{name:"Ail",qty:3,unit:"gousses"},{name:"Gingembre",qty:1,unit:"pièce"},{name:"Curcuma",qty:1,unit:"c.c."},{name:"Cumin",qty:1,unit:"c.c."},{name:"Riz",qty:300,unit:"g"},{name:"Bouillon de volaille",qty:1,unit:"cube"}],
    steps:["Faire revenir oignon, ail et gingembre râpé.","Ajouter épices, cuire 1 min.","Ajouter le poulet en morceaux, dorer 5 min.","Verser le bouillon et mijoter 25 min.","Servir avec le riz cuit."]},
-  
-{id:"r_flammekueche",name:"Tarte flambée maison",emoji:"🫓",time:30,servings:4,category:"Végétarien",allergens:["Gluten","Lactose","Oeufs"],
+  {id:"r_flammekueche",name:"Tarte flambée maison",emoji:"🫓",time:30,servings:4,category:"Végétarien",allergens:["Gluten","Lactose","Oeufs"],
    ingredients:[{name:"Farine",qty:300,unit:"g"},{name:"Crème fraîche",qty:200,unit:"ml"},{name:"Lardons",qty:150,unit:"g"},{name:"Oignon",qty:2,unit:"pièces"},{name:"Fromage râpé",qty:80,unit:"g"},{name:"Beurre",qty:10,unit:"g"},{name:"Sel",qty:1,unit:"c.c."},{name:"Huile d'olive",qty:2,unit:"c.s."}],
    steps:["Mélanger farine, sel, huile et 15cl d'eau tiède. Pétrir 5 min jusqu'à obtenir une pâte lisse.","Laisser reposer la pâte 15 min sous un torchon.","Émincer finement les oignons. Faire revenir les lardons à sec 2 min.","Préchauffer le four à 250°C (thermostat maximum).","Étaler la pâte très finement sur une plaque farinée.","Étaler la crème fraîche, répartir oignons, lardons et fromage râpé.","Enfourner 10 à 12 min jusqu'à ce que les bords soient bien dorés et croustillants."]},
   {id:"r_sportbowl",name:"Bowl riz complet saumon & avocat",emoji:"🥗",time:20,servings:2,category:"Poisson",allergens:["Poisson","Oeufs"],
@@ -254,13 +239,76 @@ var SKEY_PERSONAL = "matable_v7";
 var SKEY_GROUP_PREFIX = "matable_grp_";
 var SKEY_MSGS_PREFIX = "matable_msgs_";
 
-function loadMessages(groupKey) {
-  return storageLoad(SKEY_MSGS_PREFIX + groupKey, true).then(function(d) {
-    return d && d.messages ? d.messages : [];
-  }).catch(function() { return []; });
+/* ─── DÉTECTION ENVIRONNEMENT ──────────────────────────────────── */
+/* window.storage = API Claude Artifacts (absent sur Vercel)        */
+/* storageAvailable = true seulement si window.storage est présent */
+var storageAvailable = (typeof window !== "undefined" && window.storage && typeof window.storage.get === "function");
+
+/* ─── COUCHE LOCALE (localStorage) ─────────────────────────────── */
+function lsGet(key) {
+  try {
+    var raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) { return null; }
 }
-function saveMessages(groupKey, messages) {
-  return storageSave(SKEY_MSGS_PREFIX + groupKey, {messages: messages}, true);
+function lsSet(key, data) {
+  try { window.localStorage.setItem(key, JSON.stringify(data)); } catch(e) {}
+}
+function lsDel(key) {
+  try { window.localStorage.removeItem(key); } catch(e) {}
+}
+
+/* ─── COUCHE KV VERCEL (mode groupe, données partagées) ─────────── */
+/* API routes : /api/kv-get  /api/kv-set                            */
+function kvLoad(key) {
+  return fetch("/api/kv-get?key=" + encodeURIComponent(key))
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(d) { return (d && d.value) ? d.value : null; })
+    .catch(function() { return null; });
+}
+function kvSave(key, data) {
+  return fetch("/api/kv-set", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({key: key, value: data})
+  })
+  .then(function(r) { return r.ok ? r.json() : null; })
+  .catch(function() { return null; });
+}
+
+/* ─── COUCHE ABSTRAITE : storageSave / storageLoad ──────────────── */
+/* - shared=false  → toujours localStorage                          */
+/* - shared=true   → window.storage (Artifacts) OU KV Vercel       */
+function storageSave(key, data, shared) {
+  if (!shared) {
+    lsSet(key, data);
+    return Promise.resolve();
+  }
+  if (storageAvailable) {
+    try {
+      var p = window.storage.set(key, JSON.stringify(data), true);
+      if (p && typeof p.then === "function") return p.catch(function(){});
+    } catch(e) {}
+    return Promise.resolve();
+  }
+  return kvSave(key, data);
+}
+function storageLoad(key, shared) {
+  if (!shared) {
+    return Promise.resolve(lsGet(key));
+  }
+  if (storageAvailable) {
+    try {
+      var p = window.storage.get(key, true);
+      if (p && typeof p.then === "function") {
+        return p.then(function(r) {
+          try { return r && r.value ? JSON.parse(r.value) : null; } catch(e) { return null; }
+        }).catch(function() { return null; });
+      }
+    } catch(e) {}
+    return Promise.resolve(null);
+  }
+  return kvLoad(key);
 }
 
 function getOrCreateUserId() {
@@ -281,74 +329,34 @@ function genGroupCode() {
   return code;
 }
 
-function storageSave(key, data, shared) {
-  try {
-    var p = window.storage.set(key, JSON.stringify(data), shared||false);
-    if (p && typeof p.then === "function") return p.catch(function(){});
-  } catch(e) {}
-  return Promise.resolve();
-}
-function storageLoad(key, shared) {
-  try {
-    var p = window.storage.get(key, shared||false);
-    if (p && typeof p.then === "function") {
-      return p.then(function(r) {
-        try { return r && r.value ? JSON.parse(r.value) : null; } catch(e) { return null; }
-      }).catch(function() { return null; });
-    }
-  } catch(e) {}
-  return Promise.resolve(null);
-}
-
 function saveData(d, mode, groupKey) {
   if (mode === "group" && groupKey) {
-    // Sauvegarder aussi en localStorage pour Vercel (window.storage absent)
-    try { window.localStorage.setItem("ls_" + SKEY_GROUP_PREFIX + groupKey, JSON.stringify(d)); } catch(e) {}
     return storageSave(SKEY_GROUP_PREFIX + groupKey, d, true);
   }
-  // Mode personnel : sauvegarder aussi en localStorage
-  try { window.localStorage.setItem("ls_" + SKEY_PERSONAL, JSON.stringify(d)); } catch(e) {}
   return storageSave(SKEY_PERSONAL, d, false);
 }
 function loadData(mode, groupKey) {
   if (mode === "group" && groupKey) {
-    return storageLoad(SKEY_GROUP_PREFIX + groupKey, true).then(function(d) {
-      if (d) return d;
-      // Fallback localStorage
-      try {
-        var local = window.localStorage.getItem("ls_" + SKEY_GROUP_PREFIX + groupKey);
-        if (local) return JSON.parse(local);
-      } catch(e) {}
-      return null;
-    });
+    return storageLoad(SKEY_GROUP_PREFIX + groupKey, true);
   }
-  return storageLoad(SKEY_PERSONAL, false).then(function(d) {
-    if (d) return d;
-    // Fallback localStorage
-    try {
-      var local = window.localStorage.getItem("ls_" + SKEY_PERSONAL);
-      if (local) return JSON.parse(local);
-    } catch(e) {}
-    return null;
-  });
+  return storageLoad(SKEY_PERSONAL, false);
 }
 
-/* Métadonnées groupe — stockées en shared avec la clé matable_meta_{code} */
+function loadMessages(groupKey) {
+  return storageLoad(SKEY_MSGS_PREFIX + groupKey, true).then(function(d) {
+    return d && d.messages ? d.messages : [];
+  }).catch(function() { return []; });
+}
+function saveMessages(groupKey, messages) {
+  return storageSave(SKEY_MSGS_PREFIX + groupKey, {messages: messages}, true);
+}
+
+/* Métadonnées groupe */
 function saveGroupMeta(code, meta) {
-  // Sauvegarder en localStorage (fonctionne sur Vercel) ET dans window.storage si dispo
-  try { window.localStorage.setItem("matable_meta_" + code, JSON.stringify(meta)); } catch(e) {}
   return storageSave("matable_meta_" + code, meta, true);
 }
 function loadGroupMeta(code) {
-  // Essayer window.storage d abord, fallback localStorage
-  return storageLoad("matable_meta_" + code, true).then(function(d) {
-    if (d) return d;
-    try {
-      var local = window.localStorage.getItem("matable_meta_" + code);
-      if (local) return JSON.parse(local);
-    } catch(e) {}
-    return null;
-  });
+  return storageLoad("matable_meta_" + code, true);
 }
 
 /* ─── MINI COMPOSANTS ─────────────────────────────────────────── */
@@ -526,20 +534,6 @@ function unitsCompatible(u1, u2) {
   }
   return false;
 }
-function convertQty(qty, fromUnit, toUnit) {
-  if (!fromUnit || !toUnit) return qty;
-  var f = fromUnit.toLowerCase();
-  var t = toUnit.toLowerCase();
-  if (f === t) return qty;
-  // Volume : tout convertir en litres
-  var toL = {ml:0.001, cl:0.01, dl:0.1, l:1, litre:1, litres:1};
-  if (toL[f] !== undefined && toL[t] !== undefined) return qty * toL[f] / toL[t];
-  // Masse : tout convertir en grammes
-  var toG = {mg:0.001, g:1, gramme:1, grammes:1, kg:1000};
-  if (toG[f] !== undefined && toG[t] !== undefined) return qty * toG[f] / toG[t];
-  return qty;
-}
-
 function estimateCost(recipe, catalogue, servings) {
   if (!recipe || !recipe.ingredients || !recipe.ingredients.length) return null;
   var n = servings || recipe.servings || 4;
@@ -558,8 +552,7 @@ function estimateCost(recipe, catalogue, servings) {
       lines.push({name:ing.name, qty:ing.qty, unit:ing.unit, catUnit:cat?cat.unit:ing.unit, price:lineTotal, catId:cat?cat.id:null, ok:true, ponctuel:true});
     } else if (cat && cat.price) {
       var compat = unitsCompatible(ing.unit, cat.unit);
-      var convQty = convertQty(ing.qty || 1, ing.unit, cat.unit);
-      var lineTotal = Math.round(cat.price * convQty * ratio * 100) / 100;
+      var lineTotal = Math.round(cat.price * (ing.qty || 1) * ratio * 100) / 100;
       if (compat) {
         total += lineTotal;
         matched++;
@@ -849,7 +842,6 @@ function App() {
   var _notif = useState(null); var notif = _notif[0]; var setNotif = _notif[1];
   var _picker = useState(null); var picker = _picker[0]; var setPicker = _picker[1];
   var _pickerFilter = useState("Tous"); var pickerFilter = _pickerFilter[0]; var setPickerFilter = _pickerFilter[1];
-  var _pickerSearch = useState(""); var pickerSearch = _pickerSearch[0]; var setPickerSearch = _pickerSearch[1];
   var _cellMenu = useState(null); var cellMenu = _cellMenu[0]; var setCellMenu = _cellMenu[1]; // {day,meal,r}
   var _cellPriceEdit = useState(null); var cellPriceEdit = _cellPriceEdit[0]; var setCellPriceEdit = _cellPriceEdit[1]; // {catId,name,unit,ingUnit,price,tempPrice}
   var _selRec = useState(null); var selRec = _selRec[0]; var setSelRec = _selRec[1];
@@ -955,13 +947,6 @@ function App() {
       var savedAuthor = window.localStorage.getItem("matable_author");
       if (savedAuthor) { setMsgAuthor(savedAuthor); setMsgAuthorSet(true); }
     } catch(e) {}
-    // Restaurer groupMeta depuis localStorage si mode groupe
-    try {
-      if (getLocalMode() === "group" && getLocalGroupKey()) {
-        var savedMeta = window.localStorage.getItem("matable_groupmeta");
-        if (savedMeta) setGroupMeta(JSON.parse(savedMeta));
-      }
-    } catch(e) {}
   }, []);
 
   useEffect(function() {
@@ -1013,14 +998,6 @@ function App() {
     setGroupKey(newKey || null);
     setLocalGroupKey(newKey || null);
     setGroupMeta(newMeta || null);
-    // Persister groupMeta dans localStorage
-    try {
-      if (newMeta && newKey) {
-        window.localStorage.setItem("matable_groupmeta", JSON.stringify(newMeta));
-      } else {
-        window.localStorage.removeItem("matable_groupmeta");
-      }
-    } catch(e) {}
     setLoaded(false);
     loadData(newMode, newKey).then(function(d) {
       applyData(d);
@@ -2289,44 +2266,25 @@ function App() {
       )}
 
       {/* Picker recette planning */}
-      <Modal theme={t} open={!!picker} onClose={function(){setPicker(null);setPickerSearch("");}} title="Choisir une recette">
+      <Modal theme={t} open={!!picker} onClose={function(){setPicker(null);}} title="Choisir une recette">
         {picker && (
           <div>
-            <input
-              type="text"
-              placeholder="Rechercher une recette..."
-              value={pickerSearch}
-              onChange={function(e){ setPickerSearch(e.target.value); }}
-              style={{width:"100%",padding:"9px 12px",borderRadius:12,border:"1px solid "+t.acc+"55",background:t.s1,color:t.text,fontSize:14,fontFamily:"Nunito,sans-serif",fontWeight:600,marginBottom:12,outline:"none"}}
-            />
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
               {["Tous"].concat(CAT_RECIPES).map(function(cat){
-                return <button key={cat} onClick={function(){setPickerFilter(cat);}} style={{background:pickerFilter===cat?t.acc:t.s1,color:pickerFilter===cat?"#fff":t.text,border:"none",borderRadius:20,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"Nunito,sans-serif"}}>{cat}</button>;
+                return <button key={cat} onClick={function(){setPickerFilter(cat);}} style={{background:t.bg,border:"none",borderRadius:20,padding:"5px 11px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:11,color:pickerFilter===cat?t.acc:t.text2,boxShadow:pickerFilter===cat?nSmI(t):nSm(t)}}>{cat}</button>;
               })}
             </div>
-            {(function(){
-              var filtered = recipes.filter(function(r){
-                var catOk = pickerFilter==="Tous" || r.category===pickerFilter;
-                var search = pickerSearch.trim().toLowerCase();
-                var searchOk = !search || r.name.toLowerCase().indexOf(search) >= 0;
-                return catOk && searchOk;
-              }).slice().sort(function(a,b){ return a.name.localeCompare(b.name,"fr"); });
-              if (filtered.length === 0) {
-                return <div style={{textAlign:"center",padding:"24px 0",color:t.text3,fontSize:14,fontWeight:600}}>{"Aucune recette trouvee"}</div>;
-              }
-              return filtered.map(function(r){
-                return (
-                  <div key={r.id} onClick={function(){setPlanner(function(p){ var u=Object.assign({},p); u[picker.day]=Object.assign({},p[picker.day]||{}); u[picker.day][picker.meal]=r.id; return u; }); setPicker(null); setPickerSearch(""); }}
-                    style={{display:"flex",alignItems:"center",gap:12,padding:"11px 4px",borderBottom:"1px solid "+t.s1,cursor:"pointer"}}>
-                    <span style={{fontSize:22}}>{r.emoji}</span>
-                    <div style={{flex:1}}>
-                      <div style={{fontWeight:700,fontSize:15,color:t.text}}>{r.name}</div>
-                      <div style={{fontSize:13,color:t.text3}}>{"⏱ " + r.time + "min · " + r.category}</div>
-                    </div>
+            {recipes.filter(function(r){ return pickerFilter==="Tous"||r.category===pickerFilter; }).map(function(r){
+              return (
+                <div key={r.id} onClick={function(){setPlanner(function(p){ var u=Object.assign({},p); u[picker.day]=Object.assign({},p[picker.day]); u[picker.day][picker.meal]=r.id; return u; }); setPicker(null);}} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:t.bg,borderRadius:14,marginBottom:8,boxShadow:nSm(t),cursor:"pointer"}}>
+                  <span style={{fontSize:22}}>{r.emoji}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:700,fontSize:15,color:t.text}}>{r.name}</div>
+                    <div style={{fontSize:13,color:t.text3}}>⏱ {r.time}min · {r.category}</div>
                   </div>
-                );
-              });
-            })()}
+                </div>
+              );
+            })}
           </div>
         )}
       </Modal>
@@ -3409,9 +3367,12 @@ function AiRecipeModal(props) {
     props.setAiLoading(true);
     props.setAiError("");
     var userMsg = AI_RECIPE_PROMPT + " Cree une recette pour : " + props.aiPrompt;
-    fetch("/api/chat", {
+    fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
+      headers: {
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01"
+      },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 1024,
@@ -3443,7 +3404,7 @@ function AiRecipeModal(props) {
     })
     .catch(function(err) {
       props.setAiLoading(false);
-      props.setAiError("Erreur : " + (err && err.message ? err.message : "Verifiez votre connexion et reessayez."));
+      props.setAiError("Acces reseau bloque. Utilisez claude.ai sur navigateur desktop.");
     });
   }
 
@@ -3563,9 +3524,9 @@ function ChatRecipeModal(props) {
       return {role: m.role === "assistant" ? "assistant" : "user", content: m.text};
     });
 
-    fetch("/api/chat", {
+    fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
+      headers: {"Content-Type": "application/json", "anthropic-version": "2023-06-01"},
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 1024,
@@ -3603,7 +3564,7 @@ function ChatRecipeModal(props) {
     })
     .catch(function() {
       props.setChatLoading(false);
-      props.setChatMsgs(function(p){ return p.concat([{role:"assistant",text:"Erreur de connexion. Verifiez votre reseau et reessayez."}]); });
+      props.setChatMsgs(function(p){ return p.concat([{role:"assistant",text:"Erreur réseau. Disponible sur navigateur web uniquement."}]); });
     });
   }
 
@@ -3916,9 +3877,4 @@ function ImportModal(props) {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
-
-
-  </script>
-</body>
-</html>
+export default App;
