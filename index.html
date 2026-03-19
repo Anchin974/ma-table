@@ -302,15 +302,35 @@ function storageLoad(key, shared) {
 
 function saveData(d, mode, groupKey) {
   if (mode === "group" && groupKey) {
+    // Sauvegarder aussi en localStorage pour Vercel (window.storage absent)
+    try { window.localStorage.setItem("ls_" + SKEY_GROUP_PREFIX + groupKey, JSON.stringify(d)); } catch(e) {}
     return storageSave(SKEY_GROUP_PREFIX + groupKey, d, true);
   }
+  // Mode personnel : sauvegarder aussi en localStorage
+  try { window.localStorage.setItem("ls_" + SKEY_PERSONAL, JSON.stringify(d)); } catch(e) {}
   return storageSave(SKEY_PERSONAL, d, false);
 }
 function loadData(mode, groupKey) {
   if (mode === "group" && groupKey) {
-    return storageLoad(SKEY_GROUP_PREFIX + groupKey, true);
+    return storageLoad(SKEY_GROUP_PREFIX + groupKey, true).then(function(d) {
+      if (d) return d;
+      // Fallback localStorage
+      try {
+        var local = window.localStorage.getItem("ls_" + SKEY_GROUP_PREFIX + groupKey);
+        if (local) return JSON.parse(local);
+      } catch(e) {}
+      return null;
+    });
   }
-  return storageLoad(SKEY_PERSONAL, false);
+  return storageLoad(SKEY_PERSONAL, false).then(function(d) {
+    if (d) return d;
+    // Fallback localStorage
+    try {
+      var local = window.localStorage.getItem("ls_" + SKEY_PERSONAL);
+      if (local) return JSON.parse(local);
+    } catch(e) {}
+    return null;
+  });
 }
 
 /* Métadonnées groupe — stockées en shared avec la clé matable_meta_{code} */
