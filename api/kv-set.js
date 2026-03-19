@@ -14,17 +14,18 @@ export default async function handler(req, res) {
   if (!key) return res.status(400).json({ error: "Parametre key manquant" });
 
   try {
+    // SET direct avec EX (90 jours)
     var payload = JSON.stringify(value);
-    var response = await fetch(url + "/pipeline", {
+    var response = await fetch(url + "/set/" + encodeURIComponent(key) + "?EX=7776000", {
       method: "POST",
       headers: {
         Authorization: "Bearer " + token,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify([["SET", key, payload, "EX", 7776000]])
+      body: payload
     });
-    await response.json();
-    return res.status(200).json({ ok: true });
+    var data = await response.json();
+    return res.status(200).json({ ok: data.result === "OK" });
   } catch (err) {
     return res.status(500).json({ error: "Erreur KV: " + err.message });
   }

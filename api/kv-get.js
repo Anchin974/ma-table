@@ -20,6 +20,7 @@ export default async function handler(req, res) {
     if (data.result === null || data.result === undefined) {
       return res.status(200).json({ value: null });
     }
+    // Upstash retourne la valeur comme une chaîne JSON — on la parse
     try {
       return res.status(200).json({ value: JSON.parse(data.result) });
     } catch(e) {
