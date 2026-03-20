@@ -2,11 +2,14 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8"/>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+  <meta http-equiv="Pragma" content="no-cache"/>
+  <meta http-equiv="Expires" content="0"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
   <title>Ma Table</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js?v=44"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js?v=44"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js?v=44"></script>
   <style>* { margin:0; padding:0; box-sizing:border-box; } body { font-family: Nunito, sans-serif; }</style>
 </head>
 <body>
@@ -248,15 +251,16 @@ var DEFAULT_RECIPES = [
   }
 ];
 
-/* ─── STORAGE ─────────────────────────────────────────────────── */
-/* Données personnelles  → localStorage (clé SKEY_PERSONAL)        */
-/* Données groupe        → Upstash Redis via /api/kv-get /api/kv-set*/
-/* NE JAMAIS modifier SKEY_PERSONAL (perte des données utilisateur) */
-var SKEY_PERSONAL    = "matable_v7";
-var SKEY_GROUP_PREFIX = "matable_grp_";
-var SKEY_MSGS_PREFIX  = "matable_msgs_";
+/* ─── STORAGE v5.0 ────────────────────────────────────────────── */
+/* Données personnelles  → localStorage (SKEY_PERSONAL)             */
+/* Données groupes       → Upstash Redis + copie locale localStorage */
+/* JAMAIS modifier SKEY_PERSONAL — perte des données utilisateur    */
+var SKEY_PERSONAL     = "matable_v7";
+var SKEY_GROUP_PREFIX  = "matable_grp_";
+var SKEY_MSGS_PREFIX   = "matable_msgs_";
+var SKEY_GROUPS_LIST   = "matable_groups_v5"; /* liste des groupes rejoints */
 
-/* ── localStorage (mode personnel) ─────────────────────────────── */
+/* ── localStorage ───────────────────────────────────────────────── */
 function lsGet(key) {
   try { var r = window.localStorage.getItem(key); return r ? JSON.parse(r) : null; } catch(e) { return null; }
 }
@@ -264,10 +268,15 @@ function lsSet(key, data) {
   try { window.localStorage.setItem(key, JSON.stringify(data)); } catch(e) {}
 }
 
-/* ── Upstash REST (mode groupe, données partagées) ──────────────── */
+/* ── Upstash REST ───────────────────────────────────────────────── */
 function kvGet(key) {
-  return fetch("/api/kv-get?key=" + encodeURIComponent(key))
-    .then(function(r) { return r.ok ? r.json() : {value: null}; })
+  return fetch("/api/kv-get?key=" + encodeURIComponent(key) + "&_=" + Date.now())
+    .then(function(r) {
+      if (!r.ok) return {value: null};
+      return r.text().then(function(t) {
+        try { return JSON.parse(t); } catch(e) { return {value: null}; }
+      });
+    })
     .then(function(d) { return d && d.value !== undefined ? d.value : null; })
     .catch(function() { return null; });
 }
@@ -309,8 +318,48 @@ function loadMessages(groupKey) {
 function saveMessages(groupKey, messages) {
   return storageSave(SKEY_MSGS_PREFIX + groupKey, {messages: messages}, true);
 }
-function saveGroupMeta(code, meta) { return storageSave("matable_meta_" + code, meta, true); }
-function loadGroupMeta(code)       { return storageLoad("matable_meta_" + code, true); }
+
+/* ── Meta groupe : Upstash + copie locale (reconnexion auto) ─────── */
+function saveGroupMeta(code, meta) {
+  /* Sauvegarder sur Upstash (partagé) ET en local (reconnexion auto) */
+  lsSet("matable_meta_local_" + code, meta);
+  return storageSave("matable_meta_" + code, meta, true);
+}
+function loadGroupMeta(code) {
+  /* Essayer Upstash d'abord, fallback sur copie locale si échec */
+  return storageLoad("matable_meta_" + code, true).then(function(meta) {
+    if (meta) {
+      lsSet("matable_meta_local_" + code, meta); /* rafraîchir le cache local */
+      return meta;
+    }
+    return lsGet("matable_meta_local_" + code); /* fallback local */
+  }).catch(function() {
+    return lsGet("matable_meta_local_" + code);
+  });
+}
+
+/* ── Gestion de la liste des groupes (multi-groupes) ────────────── */
+function getGroupsList() {
+  return lsGet(SKEY_GROUPS_LIST) || [];
+}
+function addToGroupsList(meta) {
+  var groups = getGroupsList();
+  var exists = groups.find(function(g) { return g.code === meta.code; });
+  if (!exists) {
+    groups.push({code: meta.code, name: meta.name, createdBy: meta.createdBy});
+    lsSet(SKEY_GROUPS_LIST, groups);
+  } else {
+    /* Mettre à jour le nom si changé */
+    groups = groups.map(function(g) {
+      return g.code === meta.code ? Object.assign({}, g, {name: meta.name}) : g;
+    });
+    lsSet(SKEY_GROUPS_LIST, groups);
+  }
+}
+function removeFromGroupsList(code) {
+  var groups = getGroupsList().filter(function(g) { return g.code !== code; });
+  lsSet(SKEY_GROUPS_LIST, groups);
+}
 
 
 function getOrCreateUserId() {
@@ -919,17 +968,23 @@ function App() {
       clearTimeout(timeout);
       finish(null);
     });
-    /* Charger les métadonnées du groupe si on est en mode groupe */
+    /* Reconnexion auto au groupe actif */
     if (initMode === "group" && initKey) {
       loadGroupMeta(initKey).then(function(meta) {
         if (meta) {
+          addToGroupsList(meta); /* s'assurer qu'il est dans la liste */
           setGroupMeta(meta);
         } else {
-          /* Meta introuvable sur Upstash — repasser en mode personnel proprement */
+          /* Meta introuvable — repasser en mode personnel */
           setLocalMode("personal");
           setLocalGroupKey(null);
         }
-      }).catch(function() {});
+      }).catch(function() {
+        /* Fallback : essayer la copie locale */
+        var localMeta = lsGet("matable_meta_local_" + initKey);
+        if (localMeta) setGroupMeta(localMeta);
+        else { setLocalMode("personal"); setLocalGroupKey(null); }
+      });
     }
     try {
       var savedAuthor = window.localStorage.getItem("matable_author");
@@ -999,14 +1054,15 @@ function App() {
     var code = genGroupCode();
     var meta = { name: groupNameInp.trim(), createdBy: userId, code: code, createdAt: Date.now() };
     saveGroupMeta(code, meta).then(function() {
+      addToGroupsList(meta);
       setGroupLoading(false);
       setGroupView("created");
       setGroupMeta(meta);
-      toast("Groupe " + meta.name + " cree !");
+      toast("Groupe " + meta.name + " créé !");
       switchMode("group", code, meta);
     }).catch(function() {
       setGroupLoading(false);
-      toast("Erreur creation groupe", "err");
+      toast("Erreur création groupe", "err");
     });
   }
 
@@ -1014,22 +1070,52 @@ function App() {
     var code = joinCodeInp.trim().toUpperCase();
     if (code.length < 6) return;
     setGroupLoading(true);
-    loadGroupMeta(code).then(function(meta) {
-      setGroupLoading(false);
-      if (!meta) { toast("Code introuvable", "err"); return; }
-      toast("Rejoint " + meta.name + " !");
-      switchMode("group", code, meta);
-      setGroupOpen(false);
-    }).catch(function() {
-      setGroupLoading(false);
-      toast("Erreur de connexion", "err");
-    });
+    /* Retry 3 fois avec délai croissant — robuste sur iOS Safari */
+    function tryJoin(attempt) {
+      return fetch("/api/kv-get?key=" + encodeURIComponent("matable_meta_" + code) + "&_=" + Date.now())
+        .then(function(r) {
+          if (!r.ok) return {value: null};
+          return r.text().then(function(t) {
+            try { return JSON.parse(t); } catch(e) { return {value: null}; }
+          });
+        })
+        .then(function(d) {
+          var meta = d && d.value ? d.value : null;
+          if (meta) {
+            addToGroupsList(meta);   /* mémoriser pour reconnexion auto */
+            lsSet("matable_meta_local_" + code, meta); /* copie locale */
+            setGroupLoading(false);
+            toast("Rejoint " + meta.name + " !");
+            switchMode("group", code, meta);
+            setGroupOpen(false);
+            return;
+          }
+          if (attempt < 3) {
+            return new Promise(function(resolve) {
+              setTimeout(function() { resolve(tryJoin(attempt + 1)); }, attempt * 1000);
+            });
+          }
+          setGroupLoading(false);
+          toast("Code introuvable. Vérifiez le code et réessayez.", "err");
+        })
+        .catch(function() {
+          if (attempt < 3) {
+            return new Promise(function(resolve) {
+              setTimeout(function() { resolve(tryJoin(attempt + 1)); }, attempt * 1000);
+            });
+          }
+          setGroupLoading(false);
+          toast("Erreur réseau. Vérifiez votre connexion.", "err");
+        });
+    }
+    tryJoin(1);
   }
 
   function handleLeaveGroup() {
+    if (groupKey) removeFromGroupsList(groupKey);
     switchMode("personal", null, null);
     setGroupOpen(false);
-    toast("Retour a votre base personnelle");
+    toast("Retour à votre espace personnel");
   }
 
   function isAdmin() { return groupMeta && groupMeta.createdBy === userId; }
@@ -2096,8 +2182,8 @@ function App() {
             <button onClick={function(){setImportOpen(true);setNavOpen(false);setImportCode("");setImportResult(null);}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:14,padding:"12px 22px",fontFamily:"Nunito,sans-serif",textAlign:"left"}}>
               <span style={{fontSize:22,flexShrink:0}}>📥</span>
               <div>
-                <div style={{fontSize:15,fontWeight:800,color:t.text}}>Importer</div>
-                <div style={{fontSize:12,color:t.text3,fontWeight:600,marginTop:1}}>Coller un code ou un fichier</div>
+                <div style={{fontSize:15,fontWeight:800,color:t.text}}>Importer des données</div>
+                <div style={{fontSize:12,color:t.text3,fontWeight:600,marginTop:1}}>Recettes, planning (pas le code groupe)</div>
               </div>
             </button>
             {/* Settings items */}
@@ -2729,30 +2815,65 @@ function App() {
                 display:"flex",alignItems:"center",gap:14,boxShadow:nSm(t),textAlign:"left"}}>
               <span style={{fontSize:26}}>{"📥"}</span>
               <span style={{flex:1}}>
-                <span style={{display:"block",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:15,color:t.text}}>Importer</span>
-                <span style={{display:"block",fontSize:12,color:t.text3,marginTop:2}}>Coller un code partagé</span>
+                <span style={{display:"block",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:15,color:t.text}}>Importer des données</span>
+                <span style={{display:"block",fontSize:12,color:t.text3,marginTop:2}}>Recettes et planning uniquement</span>
               </span>
               <span style={{fontSize:12,color:t.text3}}>{"›"}</span>
             </button>
             <div style={{height:1,background:t.s1,margin:"8px 0"}}/>
-            <button onClick={function(){setSettingsOpen(false);setGroupOpen(true);setGroupView("main");}}
-              style={{width:"100%",background:mode==="group"?t.acc+"18":t.bg,border:mode==="group"?"2px solid "+t.acc:"none",borderRadius:14,padding:"14px 16px",cursor:"pointer",
-                display:"flex",alignItems:"center",gap:14,boxShadow:nSm(t),textAlign:"left"}}>
-              <span style={{fontSize:26}}>{"👥"}</span>
-              <span style={{flex:1}}>
-                <span style={{display:"block",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:15,color:mode==="group"?t.acc:t.text}}>
-                  {mode==="group" && groupMeta ? groupMeta.name : "Groupe collaboratif"}
-                  {mode==="group" && messages.length>0 && unreadCount()>0 && (
-                    <span style={{marginLeft:6,background:WARN,color:"#fff",borderRadius:10,padding:"0 6px",fontSize:10,fontWeight:800}}>{unreadCount()}</span>
-                  )}
-                </span>
-                <span style={{display:"block",fontSize:12,color:t.text3,marginTop:2}}>
-                  {mode==="group" ? (isAdmin()?"Admin · ":"Membre · ")+"Connecte" : "Creer ou rejoindre un groupe"}
-                </span>
-              </span>
-              {mode==="group" && <span style={{width:8,height:8,borderRadius:"50%",background:OK,flexShrink:0}}/>}
-              <span style={{fontSize:12,color:t.text3}}>{"›"}</span>
-            </button>
+            {(function(){
+              var groups = getGroupsList();
+              return React.createElement('div', {style:{width:"100%"}},
+                /* ── Mode Personnel ── */
+                React.createElement('button', {
+                  onClick: function(){
+                    setSettingsOpen(false);
+                    if (mode !== "personal") { switchMode("personal", null, null); toast("Espace personnel activé"); }
+                  },
+                  style:{width:"100%",background:mode==="personal"?t.acc+"18":t.bg,border:mode==="personal"?"2px solid "+t.acc:"2px solid transparent",borderRadius:14,padding:"12px 16px",marginBottom:6,cursor:"pointer",display:"flex",alignItems:"center",gap:12,textAlign:"left",fontFamily:"Nunito,sans-serif"}
+                },
+                  React.createElement('span', {style:{fontSize:22}}, "🏠"),
+                  React.createElement('span', {style:{flex:1}},
+                    React.createElement('span', {style:{display:"block",fontWeight:800,fontSize:14,color:t.text}}, "Personnel"),
+                    React.createElement('span', {style:{display:"block",fontSize:11,color:t.text3}}, "Votre espace privé")
+                  ),
+                  mode==="personal" && React.createElement('span', {style:{width:8,height:8,borderRadius:"50%",background:t.acc,display:"inline-block"}})
+                ),
+                /* ── Groupes rejoints ── */
+                groups.map(function(g) {
+                  var isActive = mode==="group" && groupKey===g.code;
+                  return React.createElement('button', {
+                    key: g.code,
+                    onClick: function(){
+                      setSettingsOpen(false);
+                      if (!isActive) {
+                        loadGroupMeta(g.code).then(function(meta) {
+                          var m = meta || lsGet("matable_meta_local_" + g.code);
+                          if (m) { switchMode("group", g.code, m); toast("Groupe " + m.name + " activé"); }
+                          else toast("Impossible de rejoindre ce groupe", "err");
+                        });
+                      }
+                    },
+                    style:{width:"100%",background:isActive?t.acc+"18":t.bg,border:isActive?"2px solid "+t.acc:"2px solid transparent",borderRadius:14,padding:"12px 16px",marginBottom:6,cursor:"pointer",display:"flex",alignItems:"center",gap:12,textAlign:"left",fontFamily:"Nunito,sans-serif"}
+                  },
+                    React.createElement('span', {style:{fontSize:22}}, "👥"),
+                    React.createElement('span', {style:{flex:1}},
+                      React.createElement('span', {style:{display:"block",fontWeight:800,fontSize:14,color:t.text}}, g.name),
+                      React.createElement('span', {style:{display:"block",fontSize:11,color:t.text3,fontFamily:"Georgia,serif",letterSpacing:2}}, g.code)
+                    ),
+                    isActive && React.createElement('span', {style:{width:8,height:8,borderRadius:"50%",background:t.acc,display:"inline-block"}})
+                  );
+                }),
+                /* ── Créer / Rejoindre ── */
+                React.createElement('button', {
+                  onClick: function(){setSettingsOpen(false);setGroupOpen(true);setGroupView("main");},
+                  style:{width:"100%",background:t.bg,border:"1.5px dashed "+t.text3,borderRadius:14,padding:"10px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:10,textAlign:"left",fontFamily:"Nunito,sans-serif",marginTop:4}
+                },
+                  React.createElement('span', {style:{fontSize:18}}, "+"),
+                  React.createElement('span', {style:{fontSize:13,color:t.text3,fontWeight:700}}, "Créer ou rejoindre un groupe")
+                )
+              );
+            })()}
           </div>
         </div>
       )}
@@ -3355,12 +3476,9 @@ function AiRecipeModal(props) {
     props.setAiLoading(true);
     props.setAiError("");
     var userMsg = AI_RECIPE_PROMPT + " Cree une recette pour : " + props.aiPrompt;
-    fetch("https://api.anthropic.com/v1/messages", {
+    fetch("/api/chat", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "anthropic-version": "2023-06-01"
-      },
+      headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 1024,
@@ -3392,7 +3510,7 @@ function AiRecipeModal(props) {
     })
     .catch(function(err) {
       props.setAiLoading(false);
-      props.setAiError("Acces reseau bloque. Utilisez claude.ai sur navigateur desktop.");
+      props.setAiError("Erreur lors de la génération. Réessayez.");
     });
   }
 
@@ -3789,7 +3907,7 @@ function ImportModal(props) {
     setErr("");
     setPreview(null);
     var data = decodeShare(props.importCode);
-    if (!data) { setErr("Code invalide ou corrompu. Vérifiez et réessayez."); return; }
+    if (!data) { setErr("Code invalide. Note : pour rejoindre un groupe, utilisez Paramètres → Groupe collaboratif → Rejoindre."); return; }
     setPreview(data);
   }
 
