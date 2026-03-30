@@ -537,11 +537,11 @@ function findCatProduct(ingName, catalogue) {
 }
 function unitsCompatible(u1, u2) {
   if (!u1 || !u2) return true;
-  var a = u1.toLowerCase(); var b = u2.toLowerCase();
+  var a = u1.toLowerCase().trim(); var b = u2.toLowerCase().trim();
   if (a === b) return true;
   var groups = [
     ["g","kg","mg"],
-    ["ml","l","cl","dl"],
+    ["ml","l","cl","dl","litre","litres"],
     ["piece","pièce","pièces","pieces","unite","unité","tranche","tranches","portion","portions"],
     ["cube","cubes"],
     ["botte","bottes","bouquet","bouquets","tete","tête","bulbe","bulbes"],
@@ -557,6 +557,48 @@ function unitsCompatible(u1, u2) {
   }
   return false;
 }
+
+/* Retourne le facteur pour convertir qty en unité de référence du catalogue
+   Ex: convertToRef(250,"ml","l") → 0.250  (250ml = 0.250L)
+       convertToRef(200,"g","kg") → 0.200  (200g = 0.200kg)
+       convertToRef(2,"pièce","pièce") → 2  */
+function convertToRef(qty, ingUnit, catUnit) {
+  var a = (ingUnit || "").toLowerCase().trim();
+  var b = (catUnit || "").toLowerCase().trim();
+  if (!a || !b || a === b) return qty;
+  /* Masse : référence kg */
+  var massToKg = {g:0.001, kg:1, mg:0.000001};
+  if (massToKg[a] !== undefined && massToKg[b] !== undefined)
+    return qty * massToKg[a] / massToKg[b];
+  /* Volume : référence L */
+  var volToL = {ml:0.001, cl:0.01, dl:0.1, l:1, litre:1, litres:1};
+  if (volToL[a] !== undefined && volToL[b] !== undefined)
+    return qty * volToL[a] / volToL[b];
+  /* Même groupe mais pas de facteur connu → ratio 1 */
+  return qty;
+}
+
+/* Unité de référence lisible pour l'affichage catalogue */
+function refUnit(unit) {
+  var u = (unit || "").toLowerCase().trim();
+  var massUnits = ["g","kg","mg"];
+  var volUnits = ["ml","cl","dl","l","litre","litres"];
+  if (massUnits.indexOf(u) >= 0) return "kg";
+  if (volUnits.indexOf(u) >= 0) return "L";
+  return unit;
+}
+
+/* Convertit un prix existant vers le prix par unité de référence
+   Ex: prix=0.0018 unité=g → 1.80 €/kg */
+function normalizePriceToCatalogRef(price, unit) {
+  if (price == null) return null;
+  var u = (unit || "").toLowerCase().trim();
+  var massUnits = {g: 1000, mg: 1000000};
+  var volUnits  = {ml: 1000, cl: 100, dl: 10};
+  if (massUnits[u]) return Math.round(price * massUnits[u] * 100) / 100;
+  if (volUnits[u])  return Math.round(price * volUnits[u]  * 100) / 100;
+  return Math.round(price * 100) / 100;
+}
 function estimateCost(recipe, catalogue, servings) {
   if (!recipe || !recipe.ingredients || !recipe.ingredients.length) return null;
   var n = servings || recipe.servings || 4;
@@ -565,9 +607,8 @@ function estimateCost(recipe, catalogue, servings) {
   var matched = 0;
   var lines = [];
   recipe.ingredients.forEach(function(ing) {
-    var nameLow = ing.name.toLowerCase();
     var cat = findCatProduct(ing.name, catalogue);
-    // Prix ponctuel défini sur la recette → priorité absolue
+    /* Prix ponctuel sur la recette → priorité absolue */
     if (ing.price != null && ing.price >= 0) {
       var lineTotal = Math.round(ing.price * ratio * 100) / 100;
       total += lineTotal;
@@ -575,8 +616,11 @@ function estimateCost(recipe, catalogue, servings) {
       lines.push({name:ing.name, qty:ing.qty, unit:ing.unit, catUnit:cat?cat.unit:ing.unit, price:lineTotal, catId:cat?cat.id:null, ok:true, ponctuel:true});
     } else if (cat && cat.price) {
       var compat = unitsCompatible(ing.unit, cat.unit);
-      var lineTotal = Math.round(cat.price * (ing.qty || 1) * ratio * 100) / 100;
       if (compat) {
+        /* Conversion automatique : ing.qty en unité recette → unité catalogue */
+        var qtyConverted = convertToRef(ing.qty || 1, ing.unit, cat.unit);
+        /* cat.price est en €/unité-ref (ex €/kg, €/L, €/pièce) */
+        var lineTotal = Math.round(cat.price * qtyConverted * ratio * 100) / 100;
         total += lineTotal;
         matched++;
         lines.push({name:ing.name, qty:ing.qty, unit:ing.unit, catUnit:cat.unit, price:lineTotal, catId:cat.id, ok:true});
@@ -934,6 +978,9 @@ function App() {
   var _aiLoading = useState(false); var aiLoading = _aiLoading[0]; var setAiLoading = _aiLoading[1];
   var _aiPreview = useState(null); var aiPreview = _aiPreview[0]; var setAiPreview = _aiPreview[1];
   var _aiError = useState(""); var aiError = _aiError[0]; var setAiError = _aiError[1];
+  var _recDetailOpen = useState(null); var recDetailOpen = _recDetailOpen[0]; var setRecDetailOpen = _recDetailOpen[1]; /* recette ouverte pour notes/ratings */
+  var _recCommentInput = useState(""); var recCommentInput = _recCommentInput[0]; var setRecCommentInput = _recCommentInput[1];
+  var _recRatingFilter = useState(0); var recRatingFilter = _recRatingFilter[0]; var setRecRatingFilter = _recRatingFilter[1];
 
   var t = THEMES[themeId] || THEMES.bois;
 
@@ -1013,6 +1060,52 @@ function App() {
     var q = listSearch.toLowerCase();
     setListResults(catalogue.filter(function(c){ return c.name.toLowerCase().indexOf(q) >= 0; }).slice(0,8));
   }, [listSearch, catalogue]);
+
+  /* ── Helpers notes, commentaires, ratings ── */
+  function getRecipeRating(rec) {
+    if (!rec || !rec.ratings) return null;
+    var vals = Object.values(rec.ratings);
+    if (!vals.length) return null;
+    return Math.round((vals.reduce(function(a,b){return a+b;},0) / vals.length) * 10) / 10;
+  }
+  function getUserRating(rec) {
+    if (!rec || !rec.ratings) return 0;
+    return rec.ratings[userId] || 0;
+  }
+  function setRecipeRating(rec, stars) {
+    var newRatings = Object.assign({}, rec.ratings || {});
+    if (newRatings[userId] === stars) delete newRatings[userId]; /* toggle off */
+    else newRatings[userId] = stars;
+    setRecipes(function(p){ return p.map(function(r){ return r.id===rec.id ? Object.assign({},r,{ratings:newRatings}) : r; }); });
+  }
+  function addComment(rec, text) {
+    if (!text.trim()) return;
+    var author = msgAuthor || "Anonyme";
+    var newComment = {id:gid(), author:author, text:text.trim(), ts:Date.now()};
+    var newComments = (rec.comments||[]).concat([newComment]);
+    setRecipes(function(p){ return p.map(function(r){ return r.id===rec.id ? Object.assign({},r,{comments:newComments}) : r; }); });
+    setRecCommentInput("");
+  }
+  function deleteComment(rec, commentId) {
+    var newComments = (rec.comments||[]).filter(function(c){return c.id!==commentId;});
+    setRecipes(function(p){ return p.map(function(r){ return r.id===rec.id ? Object.assign({},r,{comments:newComments}) : r; }); });
+  }
+  function setCreatorNote(rec, note) {
+    setRecipes(function(p){ return p.map(function(r){ return r.id===rec.id ? Object.assign({},r,{creatorNote:note}) : r; }); });
+  }
+  function setRecipeAuthor(rec, author) {
+    setRecipes(function(p){ return p.map(function(r){ return r.id===rec.id ? Object.assign({},r,{createdBy:author}) : r; }); });
+  }
+  function renderStars(rating, onRate, small) {
+    var sz = small ? 16 : 22;
+    return [1,2,3,4,5].map(function(s){
+      return React.createElement('span', {
+        key:s,
+        onClick: onRate ? function(){onRate(s);} : null,
+        style:{cursor:onRate?"pointer":"default",fontSize:sz,color:s<=Math.round(rating||0)?"#f59e0b":"#d1d5db",lineHeight:1}
+      }, s<=Math.round(rating||0)?"★":"☆");
+    });
+  }
 
   function toast(msg, type) { setNotif({msg:msg, type:type||"ok"}); setTimeout(function(){ setNotif(null); }, 3000); }
 
@@ -1340,7 +1433,8 @@ function App() {
     var catOk = recFilter==="Tous" || r.category===recFilter;
     var searchOk = !recSearch.trim() || r.name.toLowerCase().indexOf(recSearch.toLowerCase()) >= 0;
     var favOk = !recFavOnly || !!favorites[r.id];
-    return catOk && searchOk && favOk;
+    var ratingOk = recRatingFilter === 0 || Math.round(getRecipeRating(r)||0) >= recRatingFilter;
+    return catOk && searchOk && favOk && ratingOk;
   }).sort(function(a,b){ return a.name.localeCompare(b.name, "fr"); });
   var todayKey = dayKey(new Date());
 
@@ -1523,6 +1617,8 @@ function App() {
                             <span style={{display:"flex",flexDirection:"column",flex:1}}>
                               <span style={{fontSize:12,fontWeight:700,lineHeight:1.3,color:"#fff"}}>{r.emoji} {r.name}</span>
                               {(function(){ var cost=estimateCost(r,catalogue); return cost ? <span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.82)",marginTop:2}}>{fmtEuro(cost.total)}</span> : null; })()}
+                              {getRecipeRating(r) !== null && <span style={{display:"flex",gap:1,marginTop:2}}>{renderStars(getRecipeRating(r),null,true)}</span>}
+                              {r.createdBy && <span style={{fontSize:10,color:"rgba(255,255,255,0.7)",fontStyle:"italic",marginTop:1}}>{"By "+r.createdBy}</span>}
                             </span>
                           ) : (
                             <span style={{fontSize:16,color:t.text3,fontWeight:300}}>+</span>
@@ -1580,7 +1676,14 @@ function App() {
             })}
           </div>
           <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
-            <Btn theme={t} small onClick={function(){setNewRec({id:gid(),name:"",time:30,servings:4,category:"Viande",emoji:"🍴",allergens:[],ingredients:[{name:"",qty:1,unit:"pièce"}],steps:[""]});}}>+ Nouvelle</Btn>
+            <div style={{display:"flex",alignItems:"center",gap:4,marginRight:6}}>
+              {[0,1,2,3,4,5].map(function(n){
+                return <button key={n} onClick={function(){setRecRatingFilter(n);}} style={{background:recRatingFilter===n?t.acc+"22":"none",border:recRatingFilter===n?"1.5px solid "+t.acc:"1.5px solid transparent",borderRadius:8,padding:"3px 6px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontSize:n===0?11:13,fontWeight:800,color:recRatingFilter===n?t.acc:t.text3}}>
+                  {n===0?"Toutes":[...Array(n)].map(function(_,i){return "★";}).join("")}
+                </button>;
+              })}
+            </div>
+            <Btn theme={t} small onClick={function(){setNewRec({id:gid(),name:"",time:30,servings:4,category:"Viande",emoji:"🍴",allergens:[],ingredients:[{name:"",qty:1,unit:"pièce"}],steps:[""],createdBy:msgAuthor||"",creatorNote:"",comments:[],ratings:{}});}}>+ Nouvelle</Btn>
             {selMode!=="recipes" ? (
               <Btn theme={t} small onClick={function(){setSelMode("recipes");setSelIds({});}}>☑ Sélectionner</Btn>
             ) : (
@@ -1616,6 +1719,8 @@ function App() {
                     <div style={{display:"flex",gap:4,flexWrap:"wrap",justifyContent:"center",borderTop:"1px dashed "+t.s1,paddingTop:7}}>
                       <span style={{fontSize:10,color:t.text3,fontWeight:700}}>{"⏱"} {r.time}min</span>
                       <span style={{fontSize:10,color:t.text3}}>{"·"}</span>
+                      {getRecipeRating(r) !== null && <span style={{fontSize:10,color:"#f59e0b"}}>{[...Array(Math.round(getRecipeRating(r)))].map(function(_,i){return "★";}).join("") + " " + getRecipeRating(r)}</span>}
+                      {r.createdBy && <span style={{fontSize:10,color:t.text3,fontStyle:"italic",marginLeft:2}}>{"· By "+r.createdBy}</span>}
                       <span style={{fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:8,background:(CAT_COLORS[r.category]||t.acc)+"22",color:CAT_COLORS[r.category]||t.acc}}>{r.category}</span>
                     </div>
                   </div>
@@ -1669,7 +1774,7 @@ function App() {
             </div>
           </div>
           <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
-            <Btn theme={t} small accent onClick={function(){setCatNew({name:"",aisle:AISLES[0],unit:"pièce"});setCatNewOpen(true);}}>+ Nouveau</Btn>
+            <Btn theme={t} small accent onClick={function(){setCatNew({name:"",aisle:AISLES[0],unit:"pièce",price:null});setCatNewOpen(true);}}>+ Nouveau</Btn>
             {selMode!=="catalogue" ? (
               <Btn theme={t} small onClick={function(){setSelMode("catalogue");setSelIds({});}}>☑ Sélectionner</Btn>
             ) : (
@@ -1710,7 +1815,7 @@ function App() {
                           ) : (
                             <span onClick={function(e){e.stopPropagation();setEditPrice({id:c.id,val:c.price!=null?String(c.price):"0"});}}
                               style={{fontSize:11,fontWeight:700,color:c.price?t.acc:t.text3,background:t.s1,borderRadius:6,padding:"2px 7px",cursor:"pointer"}}>
-                              {c.price ? fmtEuro(c.price) + "/u" : "Prix ?"}
+                              {c.price ? fmtEuro(c.price) + "/" + refUnit(c.unit) : "Prix ?"}
                             </span>
                           )}
                         </div>
@@ -2354,7 +2459,7 @@ function App() {
                   <span style={{fontSize:22}}>{r.emoji}</span>
                   <div style={{flex:1}}>
                     <div style={{fontWeight:700,fontSize:15,color:t.text}}>{r.name}</div>
-                    <div style={{fontSize:13,color:t.text3}}>⏱ {r.time}min · {r.category}</div>
+                    <div style={{fontSize:13,color:t.text3}}>⏱ {r.time}min · {r.category}{getRecipeRating(r) !== null ? " · " + getRecipeRating(r) + "★" : ""}</div>
                   </div>
                 </div>
               );
@@ -2380,6 +2485,8 @@ function App() {
           <div>
             <div style={{display:"flex",gap:8,marginBottom:10}}>
               <input style={Object.assign({},inpStyle(t),{width:60})} value={newRec.emoji} onChange={function(e){setNewRec(function(p){return Object.assign({},p,{emoji:e.target.value});});}} maxLength={2}/>
+                <div style={{fontSize:11,color:t.text3,fontWeight:700,marginTop:8,marginBottom:4}}>{"Recette par (signature)"}</div>
+                <input value={newRec.createdBy||""} onChange={function(e){setNewRec(function(p){return Object.assign({},p,{createdBy:e.target.value});});}} placeholder={"By " + (msgAuthor||"Votre nom")} style={{width:"100%",padding:"9px 12px",borderRadius:10,border:"1px solid "+t.s1,background:t.bg,color:t.text,fontFamily:"Nunito,sans-serif",fontSize:13,boxSizing:"border-box"}}/>
               <input style={Object.assign({},inpStyle(t),{flex:1})} placeholder="Nom de la recette" value={newRec.name} onChange={function(e){setNewRec(function(p){return Object.assign({},p,{name:e.target.value});});}}/>
             </div>
             <div style={{display:"flex",gap:8,marginBottom:10}}>
@@ -2467,6 +2574,8 @@ function App() {
               );
             })}
             <Btn theme={t} small onClick={function(){setNewRec(function(p){return Object.assign({},p,{ingredients:(p.ingredients||[]).concat([{name:"",qty:1,unit:"pièce",price:null}])});});}}>+ Ingrédient</Btn>
+                <div style={{fontSize:11,color:t.text3,fontWeight:700,marginTop:14,marginBottom:4}}>{"Note du créateur (visible par tous)"}</div>
+                <textarea value={newRec.creatorNote||""} onChange={function(e){setNewRec(function(p){return Object.assign({},p,{creatorNote:e.target.value});});}} placeholder="Astuce, conseil, variante de la recette..." rows={2} style={{width:"100%",padding:"9px 12px",borderRadius:10,border:"1px solid "+t.s1,background:t.bg,color:t.text,fontFamily:"Nunito,sans-serif",fontSize:13,boxSizing:"border-box",resize:"none"}}/>
             <div style={{fontSize:11,fontWeight:800,color:t.text2,margin:"14px 0 8px",letterSpacing:1}}>ÉTAPES</div>
             {(newRec.steps||[]).map(function(step,i){
               return (
@@ -2485,7 +2594,11 @@ function App() {
                   setRecipes(function(p){return p.map(function(r){return r.id===newRec.id?newRec:r;});});
                   toast("Recette modifiée");
                 } else {
-                  setRecipes(function(p){return p.concat([newRec]);});
+                  var recToSave = Object.assign(
+                    {createdBy:"", creatorNote:"", comments:[], ratings:{}},
+                    newRec
+                  );
+                  setRecipes(function(p){return p.concat([recToSave]);});
                   toast("Recette ajoutée !");
                 }
                 setNewRec(null);
@@ -2502,12 +2615,14 @@ function App() {
           <select style={Object.assign({},inpStyle(t),{marginBottom:10})} value={catNew.aisle} onChange={function(e){setCatNew(function(p){return Object.assign({},p,{aisle:e.target.value});})}}>
             {AISLES.map(function(a){return <option key={a} value={a}>{a}</option>;})}
           </select>
-          <select style={Object.assign({},inpStyle(t),{marginBottom:14})} value={catNew.unit} onChange={function(e){setCatNew(function(p){return Object.assign({},p,{unit:e.target.value});})}}>
+          <select style={Object.assign({},inpStyle(t),{marginBottom:8})} value={catNew.unit} onChange={function(e){setCatNew(function(p){return Object.assign({},p,{unit:e.target.value});})}}>
             {UNITS.map(function(u){return <option key={u} value={u}>{u}</option>;})}
           </select>
+          <div style={{fontSize:11,color:t.text3,fontWeight:700,marginBottom:4}}>{"Prix (€/" + refUnit(catNew.unit) + ") — optionnel"}</div>
+          <input type="number" step="0.01" min="0" value={catNew.price != null ? catNew.price : ""} onChange={function(e){setCatNew(function(p){return Object.assign({},p,{price:e.target.value===""?null:parseFloat(e.target.value)});});}} placeholder={"Ex: 1.20 €/" + refUnit(catNew.unit)} style={Object.assign({},inpStyle(t),{marginBottom:14})}/>
           <Btn theme={t} accent onClick={function(){
             if(!catNew.name.trim()){toast("Nom requis","err");return;}
-            setCatalogue(function(p){return p.concat([{id:gid(),name:catNew.name.trim(),aisle:catNew.aisle,unit:catNew.unit}]);});
+            setCatalogue(function(p){return p.concat([{id:gid(),name:catNew.name.trim(),aisle:catNew.aisle,unit:catNew.unit,price:catNew.price||null}]);});
             toast(catNew.name+" ajouté !");
             setCatNewOpen(false);
           }}>+ Ajouter</Btn>
@@ -3419,6 +3534,61 @@ function RecDetail(props) {
         );
       })}
 
+      }
+
+      {/* ── Signature & Note moyenne ── */}
+      {(rec.createdBy || getRecipeRating(rec) !== null) && (
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:16,paddingTop:12,borderTop:"1px solid "+t.s1}}>
+          {rec.createdBy && <span style={{fontSize:12,color:t.text3,fontStyle:"italic",fontWeight:600}}>{"✍️ By " + rec.createdBy}</span>}
+          {getRecipeRating(rec) !== null && (
+            <span style={{display:"flex",alignItems:"center",gap:4}}>
+              {renderStars(getRecipeRating(rec), null, true)}
+              <span style={{fontSize:11,color:t.text3}}>{"(" + getRecipeRating(rec) + " · " + Object.keys(rec.ratings||{}).length + " vote" + (Object.keys(rec.ratings||{}).length>1?"s":"") + ")"}</span>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Note du créateur ── */}
+      {rec.creatorNote && (
+        <div style={{background:t.acc+"15",borderRadius:12,padding:"10px 14px",marginTop:14,borderLeft:"3px solid "+t.acc}}>
+          <div style={{fontSize:11,fontWeight:800,color:t.acc,marginBottom:4}}>{"📝 Note du créateur"}</div>
+          <div style={{fontSize:13,color:t.text,lineHeight:1.5}}>{rec.creatorNote}</div>
+        </div>
+      )}
+
+      {/* ── Ma note (étoiles) ── */}
+      <div style={{marginTop:16,paddingTop:12,borderTop:"1px solid "+t.s1}}>
+        <div style={{fontSize:11,fontWeight:800,color:t.text3,marginBottom:8,letterSpacing:1.2}}>{"MA NOTE"}</div>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          {renderStars(getUserRating(rec), function(s){setRecipeRating(rec,s);}, false)}
+          {getUserRating(rec) > 0 && <span style={{fontSize:12,color:t.text3,marginLeft:4}}>{getUserRating(rec) + "/5"}</span>}
+        </div>
+      </div>
+
+      {/* ── Commentaires ── */}
+      <div style={{marginTop:14}}>
+        <div style={{fontSize:11,fontWeight:800,color:t.text3,marginBottom:8,letterSpacing:1.2}}>{"COMMENTAIRES (" + (rec.comments||[]).length + ")"}</div>
+        {(rec.comments||[]).map(function(cm){
+          return <div key={cm.id} style={{background:t.s2,borderRadius:10,padding:"8px 12px",marginBottom:6}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+              <span style={{fontSize:11,fontWeight:800,color:t.acc}}>{cm.author}</span>
+              <span style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:10,color:t.text3}}>{new Date(cm.ts).toLocaleDateString("fr-FR")}</span>
+                {(cm.author === (msgAuthor||"Anonyme")) && (
+                  <button onClick={function(){askConfirm("Supprimer ce commentaire ?","",function(){deleteComment(rec,cm.id);});}} style={{background:"none",border:"none",cursor:"pointer",fontSize:11,color:t.text3,padding:"0 2px",lineHeight:1}}>{"✕"}</button>
+                )}
+              </span>
+            </div>
+            <div style={{fontSize:13,color:t.text,lineHeight:1.4}}>{cm.text}</div>
+          </div>;
+        })}
+        <div style={{display:"flex",gap:8,marginTop:8}}>
+          <input value={recDetailOpen===rec.id ? recCommentInput : ""} onChange={function(e){setRecDetailOpen(rec.id);setRecCommentInput(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();addComment(rec,recCommentInput);}}} placeholder={"Ajouter un commentaire..."} style={{flex:1,padding:"8px 12px",borderRadius:10,border:"1px solid "+t.s1,background:t.bg,color:t.text,fontFamily:"Nunito,sans-serif",fontSize:13}}/>
+          <button onClick={function(){addComment(rec,recCommentInput);}} style={{background:t.acc,border:"none",borderRadius:10,padding:"8px 14px",cursor:"pointer",color:"#fff",fontWeight:800,fontSize:14,fontFamily:"Nunito,sans-serif"}}>{"→"}</button>
+        </div>
+      </div>
+
       {/* ── Fichiers joints ── */}
       <div style={{fontWeight:800,fontSize:12,marginBottom:8,marginTop:16,color:t.text2,letterSpacing:1.5}}>FICHIERS JOINTS</div>
       {(media.files||[]).map(function(f,i){
@@ -3447,7 +3617,7 @@ function RecDetail(props) {
           props.toast("Ingrédients ajoutés à \""+props.curList.name+"\"");
           props.setSelRec(null);
         }}>🛒 Ajouter à "{props.curList.name}"</Btn>
-        <Btn theme={t} small onClick={function(){props.setNewRec(Object.assign({},rec));props.setSelRec(null);}}>✏ Modifier</Btn>
+        <Btn theme={t} small onClick={function(){props.setNewRec(Object.assign({createdBy:"",creatorNote:"",comments:[],ratings:{}},rec));props.setSelRec(null);}}>✏ Modifier</Btn>
         <Btn theme={t} small style={{color:WARN}} onClick={function(){
           props.askConfirm("Supprimer cette recette ?","\""+rec.name+"\" sera définitivement supprimée.",function(){
             props.setRecipes(function(p){return p.filter(function(r){return r.id!==rec.id;});});
@@ -3987,4 +4157,200 @@ function ImportModal(props) {
 ReactDOM.render(React.createElement(App), document.getElementById("root"));
   </script>
 </body>
-</html>
+</htmlvar filteredRecipes = recipes.filter(function(r){
+        var catOk = recFilter==="Tous" || r.category===recFilter;
+        var searchOk = !recSearch.trim() || r.name.toLowerCase().indexOf(recSearch.toLowerCase()) >= 0;
+        var ratingOk = recRatingFilter === 0 || (getRecipeRating(r) !== null && getRecipeRating(r) >= recRatingFilter);
+        return catOk && searchOk && ratingOk;
+      });;
+    });
+  }
+
+  function handleFile(e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    readFile(file, function(data) {
+      setMedia(function(m) {
+        var files = (m.files || []).concat([{name: file.name, type: file.type, data: data}]);
+        return Object.assign({}, m, {files: files});
+      });
+    });
+  }
+
+  function removeFile(idx) {
+    setMedia(function(m) {
+      var files = (m.files || []).filter(function(_, i) { return i !== idx; });
+      return Object.assign({}, m, {files: files});
+    });
+  }
+
+  var inputStyle = {display:"none"};
+  var photoBtn = {background:t.bg,border:"2px dashed "+t.s1,borderRadius:12,padding:"8px 14px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:700,fontSize:12,color:t.text3,display:"flex",alignItems:"center",gap:6};
+
+  return (
+    <div>
+      {/* ── Photo principale ── */}
+      {media.photo
+        ? <div style={{position:"relative",marginBottom:14,borderRadius:16,overflow:"hidden"}}>
+            <img src={media.photo} alt={rec.name} style={{width:"100%",maxHeight:220,objectFit:"cover",display:"block"}} />
+            <button onClick={function(){setMedia(function(m){var x=Object.assign({},m); delete x.photo; return x;});}}
+              style={{position:"absolute",top:8,right:8,background:"rgba(0,0,0,.5)",color:"#fff",border:"none",borderRadius:20,width:28,height:28,cursor:"pointer",fontSize:14,fontWeight:900}}>✕</button>
+          </div>
+        : <label style={Object.assign({},photoBtn,{marginBottom:14,justifyContent:"center",padding:"14px"})}>
+            <input type="file" accept="image/*" style={inputStyle} onChange={handleMainPhoto} />
+            📷 Ajouter une photo du plat
+          </label>
+      }
+
+      {/* ── Emoji + chips ── */}
+      {!media.photo && <div style={{fontSize:42,textAlign:"center",marginBottom:12}}>{rec.emoji}</div>}
+      <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:10,justifyContent:"center"}}>
+        <Chip theme={t}>⏱ {rec.time}min</Chip>
+        <Chip theme={t} accent>{rec.category}</Chip>
+        {rec.allergens && rec.allergens.map(function(a){ return <Chip key={a} theme={t}><span style={{color:WARN}}>⚠</span> {a}</Chip>; })}
+      </div>
+
+      {/* ── Portions ── */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:14,background:t.bg,borderRadius:13,padding:"10px 16px",boxShadow:neu(t)}}>
+        <button onClick={function(){if(n>1) props.setRecServings({recId:rec.id,n:n-1});}} style={{background:t.bg,border:"none",borderRadius:9,width:32,height:32,cursor:"pointer",boxShadow:nSm(t),fontWeight:900,color:t.text2,fontSize:20}}>-</button>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontWeight:900,fontSize:22,color:t.acc}}>{n}</div>
+          <div style={{fontSize:10,color:t.text3,fontWeight:700}}>PERSONNES</div>
+        </div>
+        <button onClick={function(){props.setRecServings({recId:rec.id,n:n+1});}} style={{background:t.bg,border:"none",borderRadius:9,width:32,height:32,cursor:"pointer",boxShadow:nSm(t),fontWeight:900,color:t.text2,fontSize:20}}>+</button>
+      </div>
+
+      {/* ── Ingrédients ── */}
+      <div style={{fontWeight:800,fontSize:12,marginBottom:8,color:t.text2,letterSpacing:1.5}}>INGRÉDIENTS</div>
+      {scaled.map(function(ing,i){
+        return (
+          <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"7px 10px",background:t.bg,borderRadius:10,marginBottom:5,boxShadow:nSm(t)}}>
+            <span style={{fontWeight:600}}>{ing.name}</span>
+            <span style={{color:t.acc,fontWeight:700}}>{ing.qty} {ing.unit}</span>
+          </div>
+        );
+      })}
+
+      {/* ── Étapes ── */}
+      <div style={{fontWeight:800,fontSize:12,marginBottom:8,marginTop:14,color:t.text2,letterSpacing:1.5}}>PRÉPARATION</div>
+      {rec.steps.map(function(s,i){
+        var stepPhoto = media.stepPhotos && media.stepPhotos[i];
+        return (
+          <div key={i} style={{marginBottom:10,background:t.bg,borderRadius:12,padding:"10px 12px",boxShadow:nSm(t)}}>
+            <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+              <span style={{fontWeight:900,color:t.acc,flexShrink:0,marginTop:2}}>{i+1}</span>
+              <span style={{fontSize:13,lineHeight:1.6,flex:1}}>{s}</span>
+              {!stepPhoto &&
+                <label style={{flexShrink:0,cursor:"pointer",fontSize:18,opacity:.5}}>
+                  <input type="file" accept="image/*" style={inputStyle} onChange={function(e){handleStepPhoto(i,e);}} />
+                  📷
+                </label>
+              }
+            </div>
+            {stepPhoto &&
+              <div style={{position:"relative",marginTop:8,borderRadius:10,overflow:"hidden"}}>
+                <img src={stepPhoto} alt={"Étape "+(i+1)} style={{width:"100%",maxHeight:160,objectFit:"cover",display:"block"}} />
+                <button onClick={function(){setMedia(function(m){ var sp=Object.assign({},m.stepPhotos||{}); delete sp[i]; return Object.assign({},m,{stepPhotos:sp}); });}}
+                  style={{position:"absolute",top:6,right:6,background:"rgba(0,0,0,.5)",color:"#fff",border:"none",borderRadius:20,width:24,height:24,cursor:"pointer",fontSize:12,fontWeight:900}}>✕</button>
+              </div>
+            }
+          </div>
+        );
+      })}
+
+      }
+
+      {/* ── Signature & Note moyenne ── */}
+      {(rec.createdBy || getRecipeRating(rec) !== null) && (
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:16,paddingTop:12,borderTop:"1px solid "+t.s1}}>
+          {rec.createdBy && <span style={{fontSize:12,color:t.text3,fontStyle:"italic",fontWeight:600}}>{"✍️ By " + rec.createdBy}</span>}
+          {getRecipeRating(rec) !== null && (
+            <span style={{display:"flex",alignItems:"center",gap:4}}>
+              {renderStars(getRecipeRating(rec), null, true)}
+              <span style={{fontSize:11,color:t.text3}}>{"(" + getRecipeRating(rec) + " · " + Object.keys(rec.ratings||{}).length + " vote" + (Object.keys(rec.ratings||{}).length>1?"s":"") + ")"}</span>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Note du créateur ── */}
+      {rec.creatorNote && (
+        <div style={{background:t.acc+"15",borderRadius:12,padding:"10px 14px",marginTop:14,borderLeft:"3px solid "+t.acc}}>
+          <div style={{fontSize:11,fontWeight:800,color:t.acc,marginBottom:4}}>{"📝 Note du créateur"}</div>
+          <div style={{fontSize:13,color:t.text,lineHeight:1.5}}>{rec.creatorNote}</div>
+        </div>
+      )}
+
+      {/* ── Ma note (étoiles) ── */}
+      <div style={{marginTop:16,paddingTop:12,borderTop:"1px solid "+t.s1}}>
+        <div style={{fontSize:11,fontWeight:800,color:t.text3,marginBottom:8,letterSpacing:1.2}}>{"MA NOTE"}</div>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          {renderStars(getUserRating(rec), function(s){setRecipeRating(rec,s);}, false)}
+          {getUserRating(rec) > 0 && <span style={{fontSize:12,color:t.text3,marginLeft:4}}>{getUserRating(rec) + "/5"}</span>}
+        </div>
+      </div>
+
+      {/* ── Commentaires ── */}
+      <div style={{marginTop:14}}>
+        <div style={{fontSize:11,fontWeight:800,color:t.text3,marginBottom:8,letterSpacing:1.2}}>{"COMMENTAIRES (" + (rec.comments||[]).length + ")"}</div>
+        {(rec.comments||[]).map(function(cm){
+          return <div key={cm.id} style={{background:t.s2,borderRadius:10,padding:"8px 12px",marginBottom:6}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+              <span style={{fontSize:11,fontWeight:800,color:t.acc}}>{cm.author}</span>
+              <span style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:10,color:t.text3}}>{new Date(cm.ts).toLocaleDateString("fr-FR")}</span>
+                {(cm.author === (msgAuthor||"Anonyme")) && (
+                  <button onClick={function(){askConfirm("Supprimer ce commentaire ?","",function(){deleteComment(rec,cm.id);});}} style={{background:"none",border:"none",cursor:"pointer",fontSize:11,color:t.text3,padding:"0 2px",lineHeight:1}}>{"✕"}</button>
+                )}
+              </span>
+            </div>
+            <div style={{fontSize:13,color:t.text,lineHeight:1.4}}>{cm.text}</div>
+          </div>;
+        })}
+        <div style={{display:"flex",gap:8,marginTop:8}}>
+          <input value={recDetailOpen===rec.id ? recCommentInput : ""} onChange={function(e){setRecDetailOpen(rec.id);setRecCommentInput(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();addComment(rec,recCommentInput);}}} placeholder={"Ajouter un commentaire..."} style={{flex:1,padding:"8px 12px",borderRadius:10,border:"1px solid "+t.s1,background:t.bg,color:t.text,fontFamily:"Nunito,sans-serif",fontSize:13}}/>
+          <button onClick={function(){addComment(rec,recCommentInput);}} style={{background:t.acc,border:"none",borderRadius:10,padding:"8px 14px",cursor:"pointer",color:"#fff",fontWeight:800,fontSize:14,fontFamily:"Nunito,sans-serif"}}>{"→"}</button>
+        </div>
+      </div>
+
+      {/* ── Fichiers joints ── */}
+      <div style={{fontWeight:800,fontSize:12,marginBottom:8,marginTop:16,color:t.text2,letterSpacing:1.5}}>FICHIERS JOINTS</div>
+      {(media.files||[]).map(function(f,i){
+        var isPdf = f.type === "application/pdf";
+        var isImg = f.type.indexOf("image") === 0;
+        return (
+          <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:t.bg,borderRadius:10,marginBottom:6,boxShadow:nSm(t)}}>
+            <span style={{fontSize:20}}>{isPdf?"📄":isImg?"🖼":"📎"}</span>
+            <a href={f.data} download={f.name} style={{flex:1,fontSize:13,fontWeight:600,color:t.acc,textDecoration:"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</a>
+            <button onClick={function(){removeFile(i);}} style={{background:"none",border:"none",cursor:"pointer",color:t.text3,fontSize:16,padding:4}}>✕</button>
+          </div>
+        );
+      })}
+      <label style={Object.assign({},photoBtn,{marginBottom:16})}>
+        <input type="file" accept="image/*,application/pdf,.txt,.md" style={inputStyle} onChange={handleFile} />
+        📎 Joindre un fichier (PDF, image, note...)
+      </label>
+
+      {/* ── Actions ── */}
+      <div style={{display:"flex",gap:8,marginTop:4,flexWrap:"wrap"}}>
+        <Btn theme={t} accent onClick={function(){
+          scaled.forEach(function(ing){
+            var cat = props.catalogue.find(function(c){ return c.name.toLowerCase()===ing.name.toLowerCase(); });
+            props.addToList({id:cat?cat.id:gid(),name:ing.name,unit:ing.unit,aisle:cat?cat.aisle:"Autres"},ing.qty);
+          });
+          props.toast("Ingrédients ajoutés à \""+props.curList.name+"\"");
+          props.setSelRec(null);
+        }}>🛒 Ajouter à "{props.curList.name}"</Btn>
+        <Btn theme={t} small onClick={function(){props.setNewRec(Object.assign({createdBy:"",creatorNote:"",comments:[],ratings:{}},rec));props.setSelRec(null);}}>✏ Modifier</Btn>
+        <Btn theme={t} small style={{color:WARN}} onClick={function(){
+          props.askConfirm("Supprimer cette recette ?","\""+rec.name+"\" sera définitivement supprimée.",function(){
+            props.setRecipes(function(p){return p.filter(function(r){return r.id!==rec.id;});});
+            props.toast("Recette supprimée");
+            props.setSelRec(null);
+          });
+        }}>🗑</Btn>
+      </div>
+    </div>
+  );
+}
+
