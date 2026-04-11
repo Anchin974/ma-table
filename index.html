@@ -955,6 +955,8 @@ function App() {
   var _recDetailOpen = useState(null); var recDetailOpen = _recDetailOpen[0]; var setRecDetailOpen = _recDetailOpen[1];
   var _recCommentInput = useState(""); var recCommentInput = _recCommentInput[0]; var setRecCommentInput = _recCommentInput[1];
   var _recRatingFilter = useState(0); var recRatingFilter = _recRatingFilter[0]; var setRecRatingFilter = _recRatingFilter[1];
+  var _quickAddOpen = useState(false); var quickAddOpen = _quickAddOpen[0]; var setQuickAddOpen = _quickAddOpen[1];
+  var _quickAddForm = useState(null); var quickAddForm = _quickAddForm[0]; var setQuickAddForm = _quickAddForm[1];
 
   var t = THEMES[themeId] || THEMES.bois;
 
@@ -1631,7 +1633,7 @@ function App() {
             })}
           </div>
           <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
-            <Btn theme={t} small onClick={function(){setNewRec({id:gid(),name:"",time:30,servings:4,category:"Viande",emoji:"🍴",allergens:[],ingredients:[{name:"",qty:1,unit:"pièce"}],steps:[""]});}}>+ Nouvelle</Btn>
+            <Btn theme={t} small onClick={function(){setNewRec({id:gid(),name:"",time:30,servings:4,category:"Viande",emoji:"🍴",allergens:[],ingredients:[{name:"",qty:1,unit:"pièce"}],steps:[""],createdBy:msgAuthor||"",creatorNote:"",comments:[],ratings:{}});}}>+ Nouvelle</Btn>
             {selMode!=="recipes" ? (
               <Btn theme={t} small onClick={function(){setSelMode("recipes");setSelIds({});}}>☑ Sélectionner</Btn>
             ) : (
@@ -1668,6 +1670,7 @@ function App() {
                       <span style={{fontSize:10,color:t.text3,fontWeight:700}}>{"⏱"} {r.time}min</span>
                       <span style={{fontSize:10,color:t.text3}}>{"·"}</span>
                       <span style={{fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:8,background:(CAT_COLORS[r.category]||t.acc)+"22",color:CAT_COLORS[r.category]||t.acc}}>{r.category}</span>
+                      {r.createdBy && <span style={{fontSize:10,color:t.text3,fontStyle:"italic"}}>{"· By "+r.createdBy}</span>}
                     </div>
                   </div>
                 </div>
@@ -1880,7 +1883,7 @@ function App() {
             {listSearch.trim().length>0 && listResults.length===0 && (
               <div style={{position:"absolute",top:"100%",left:0,right:0,background:t.bg,borderRadius:12,boxShadow:neu(t),zIndex:30,padding:"10px 12px",marginTop:4}}>
                 <div style={{fontSize:12,color:t.text3,marginBottom:8}}>{"Aucun produit trouve dans le catalogue"}</div>
-                <button onClick={function(){var nm=listSearch.trim();var newProd={id:gid(),name:nm,aisle:"Autres",unit:"piece",price:null};setCatalogue(function(p){return p.concat([newProd]);});addToList(newProd,1);setListSearch("");toast(nm+" cree et ajoute !");}} style={{background:t.acc,border:"none",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontSize:13,fontWeight:800,color:"#fff",width:"100%",fontFamily:"Nunito,sans-serif"}}>{"+ Creer dans le catalogue"}</button>
+                <button onClick={function(){var nm=listSearch.trim();setQuickAddForm({name:nm,aisle:AISLES[0],unit:"pièce",price:null});setQuickAddOpen(true);}} style={{background:t.acc,border:"none",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontSize:13,fontWeight:800,color:"#fff",width:"100%",fontFamily:"Nunito,sans-serif"}}>{"+ Creer dans le catalogue"}</button>
               </div>
             )}
             {listResults.length>0 && (
@@ -2405,7 +2408,7 @@ function App() {
                   <span style={{fontSize:22}}>{r.emoji}</span>
                   <div style={{flex:1}}>
                     <div style={{fontWeight:700,fontSize:15,color:t.text}}>{r.name}</div>
-                    <div style={{fontSize:13,color:t.text3}}>⏱ {r.time}min · {r.category}</div>
+                    <div style={{fontSize:13,color:t.text3}}>{"⏱ "+r.time+"min · "+r.category+(r.createdBy?" · By "+r.createdBy:"")}</div>
                   </div>
                 </div>
               );
@@ -2437,6 +2440,8 @@ function App() {
           <div>
             <div style={{display:"flex",gap:8,marginBottom:10}}>
               <input style={Object.assign({},inpStyle(t),{width:60})} value={newRec.emoji} onChange={function(e){setNewRec(function(p){return Object.assign({},p,{emoji:e.target.value});});}} maxLength={2}/>
+                <div style={{fontSize:11,color:t.text3,fontWeight:700,marginTop:10,marginBottom:4}}>{"Recette par (signature — optionnel)"}</div>
+                <input value={newRec.createdBy||""} onChange={function(e){setNewRec(function(p){return Object.assign({},p,{createdBy:e.target.value});});}} placeholder={"By " + (msgAuthor||"Votre nom")} style={{width:"100%",padding:"9px 12px",borderRadius:10,border:"1px solid "+t.s1,background:t.bg,color:t.text,fontFamily:"Nunito,sans-serif",fontSize:13,boxSizing:"border-box"}}/>
               <input style={Object.assign({},inpStyle(t),{flex:1})} placeholder="Nom de la recette" value={newRec.name} onChange={function(e){setNewRec(function(p){return Object.assign({},p,{name:e.target.value});});}}/>
             </div>
             <div style={{display:"flex",gap:8,marginBottom:10}}>
@@ -3170,7 +3175,45 @@ function App() {
         </div>
       )}
 
-      {/* ══ MODALE GROUPE ══ */}
+      {/* ══ MODALE CRÉATION RAPIDE CATALOGUE ══ */}
+      {quickAddOpen && quickAddForm && (
+        <div onClick={function(){setQuickAddOpen(false);}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:400,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div onClick={function(e){e.stopPropagation();}} style={{background:t.bg,borderRadius:"22px 22px 0 0",padding:"20px 18px 40px",width:"100%",maxWidth:480,boxShadow:"0 -4px 24px "+t.s1}}>
+            <div style={{width:36,height:4,borderRadius:2,background:t.s1,margin:"0 auto 16px"}}/>
+            <div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:t.text,marginBottom:16}}>{"➕ Nouveau produit"}</div>
+
+            <div style={{fontSize:11,color:t.text3,fontWeight:700,marginBottom:4}}>{"Nom"}</div>
+            <input value={quickAddForm.name} onChange={function(e){setQuickAddForm(function(p){return Object.assign({},p,{name:e.target.value});});}} style={Object.assign({},inpStyle(t),{marginBottom:12})} placeholder="Nom du produit"/>
+
+            <div style={{fontSize:11,color:t.text3,fontWeight:700,marginBottom:4}}>{"Rayon"}</div>
+            <select value={quickAddForm.aisle} onChange={function(e){setQuickAddForm(function(p){return Object.assign({},p,{aisle:e.target.value});});}} style={Object.assign({},inpStyle(t),{marginBottom:12})}>
+              {AISLES.map(function(a){return <option key={a} value={a}>{a}</option>;})}
+            </select>
+
+            <div style={{fontSize:11,color:t.text3,fontWeight:700,marginBottom:4}}>{"Unité"}</div>
+            <select value={quickAddForm.unit} onChange={function(e){setQuickAddForm(function(p){return Object.assign({},p,{unit:e.target.value});});}} style={Object.assign({},inpStyle(t),{marginBottom:12})}>
+              {UNITS.map(function(u){return <option key={u} value={u}>{u}</option>;})}
+            </select>
+
+            <div style={{fontSize:11,color:t.text3,fontWeight:700,marginBottom:4}}>{"Prix (€/" + refUnit(quickAddForm.unit) + ") — optionnel"}</div>
+            <input type="number" step="0.01" min="0" value={quickAddForm.price!=null?quickAddForm.price:""} onChange={function(e){setQuickAddForm(function(p){return Object.assign({},p,{price:e.target.value===""?null:parseFloat(e.target.value)});});}} placeholder={"Ex: 1.20 €/"+refUnit(quickAddForm.unit)} style={Object.assign({},inpStyle(t),{marginBottom:20})}/>
+
+            <button onClick={function(){
+              if (!quickAddForm.name.trim()) return;
+              var newProd = {id:gid(),name:quickAddForm.name.trim(),aisle:quickAddForm.aisle,unit:quickAddForm.unit,price:quickAddForm.price||null};
+              setCatalogue(function(p){return p.concat([newProd]);});
+              addToList(newProd, 1);
+              setListSearch("");
+              setQuickAddOpen(false);
+              toast(newProd.name + " créé et ajouté !");
+            }} style={{width:"100%",background:"linear-gradient(135deg,"+t.acc+","+t.acc2+")",border:"none",borderRadius:14,padding:"14px",cursor:"pointer",color:"#fff",fontWeight:800,fontSize:15,fontFamily:"Nunito,sans-serif"}}>
+              {"✅ Créer et ajouter à la liste"}
+            </button>
+          </div>
+        </div>
+      )}
+
+            {/* ══ MODALE GROUPE ══ */}
       {groupOpen && (
         <div onClick={function(){setGroupOpen(false);}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
           <div onClick={function(e){e.stopPropagation();}} style={{background:t.bg,borderRadius:"22px 22px 0 0",padding:"16px 16px 40px",width:"100%",maxWidth:600,boxShadow:"0 -4px 24px "+t.s1,maxHeight:"85vh",overflowY:"auto"}}>
